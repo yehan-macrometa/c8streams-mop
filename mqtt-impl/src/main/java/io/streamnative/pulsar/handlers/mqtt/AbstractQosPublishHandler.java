@@ -60,7 +60,7 @@ public abstract class AbstractQosPublishHandler implements QosPublishHandler {
                             MQTTPublisherContext.publishMessages(message, topic.getName()))
                     .orElseGet(() -> FutureUtil.failedFuture(
                             new BrokerServiceException.TopicNotFoundException(msg.variableHeader().topicName())));
-            message.release();
+            message.recycle();
             return future;
         });
     }

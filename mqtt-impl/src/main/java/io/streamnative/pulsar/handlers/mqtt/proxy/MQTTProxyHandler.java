@@ -27,6 +27,7 @@ import io.netty.handler.codec.mqtt.MqttUnsubscribeMessage;
 import io.netty.handler.timeout.IdleState;
 import io.netty.handler.timeout.IdleStateEvent;
 import io.streamnative.pulsar.handlers.mqtt.ProtocolMethodProcessor;
+import io.netty.util.ReferenceCountUtil;
 import io.streamnative.pulsar.handlers.mqtt.utils.NettyUtils;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
@@ -110,6 +111,7 @@ public class MQTTProxyHandler extends ChannelInboundHandlerAdapter{
             }
         } catch (Throwable ex) {
             log.error("Exception was caught while processing MQTT message", ex);
+            ReferenceCountUtil.safeRelease(msg);
             ctx.close();
         }
     }

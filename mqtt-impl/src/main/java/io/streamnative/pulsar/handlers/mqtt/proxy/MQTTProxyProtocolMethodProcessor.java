@@ -26,6 +26,7 @@ import io.netty.handler.codec.mqtt.MqttPublishMessage;
 import io.netty.handler.codec.mqtt.MqttSubscribeMessage;
 import io.netty.handler.codec.mqtt.MqttTopicSubscription;
 import io.netty.handler.codec.mqtt.MqttUnsubscribeMessage;
+import io.netty.util.ReferenceCountUtil;
 import io.streamnative.pulsar.handlers.mqtt.Connection;
 import io.streamnative.pulsar.handlers.mqtt.MQTTAuthenticationService;
 import io.streamnative.pulsar.handlers.mqtt.MQTTConnectionManager;
@@ -157,6 +158,7 @@ public class MQTTProxyProtocolMethodProcessor implements ProtocolMethodProcessor
                 TopicName.get(pulsarTopicName));
         lookupResult.whenComplete((brokerAddress, throwable) -> {
             if (null != throwable) {
+                ReferenceCountUtil.safeRelease(msg);
                 log.error("[Proxy Publish] Failed to perform lookup request for topic : {}, CId : {}",
                         topic, NettyUtils.getClientId(channel), throwable);
                 channel.close();
@@ -318,6 +320,7 @@ public class MQTTProxyProtocolMethodProcessor implements ProtocolMethodProcessor
         CompletableFuture<MQTTProxyExchanger> proxyExchanger = createProxyExchanger(topic, mqttBroker);
         proxyExchanger.whenComplete((exchanger, error) -> {
             if (error != null) {
+                ReferenceCountUtil.safeRelease(msg);
                 log.error("[{}]] MoP proxy failed to connect with MoP broker({}).",
                         NettyUtils.getClientId(channel), mqttBroker, error);
                 channel.close();
@@ -330,6 +333,7 @@ public class MQTTProxyProtocolMethodProcessor implements ProtocolMethodProcessor
                 channel.close();
                 exchanger.close();
             }
+            ReferenceCountUtil.safeRelease(msg);
         });
     }
 
