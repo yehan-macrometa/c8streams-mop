@@ -19,8 +19,8 @@ jobs:
           version=`./scripts/dev/get-project-version.py`
           mvn clean install -DskipTests
           rm -rf pulsar-protocol-*
-          cp mqtt-impl/target/pulsar-protocol-handler-mqtt-${version}.nar ./
-          cp README.md ./pulsar-protocol-handler-mqtt-readme.md
+          cp mqtt-impl/target/mop-${version}.nar ./
+          cp README.md ./mop-readme.md
           echo "ls pulsar-protocol-*"
           ls pulsar-protocol-*
 

@@ -45,7 +45,7 @@ MQTT-on-Pulsar (aka MoP) is developed to support MQTT protocol natively on Apach
 3. The NAR file can be found at this location.
 
     ```bash
-    ./mqtt-impl/target/pulsar-protocol-handler-mqtt-${version}.nar
+    ./mqtt-impl/target/mop-${version}.nar
     ```
 
 ### Install MoP protocol handler
@@ -94,7 +94,7 @@ To use the proxy, follow the following steps. For detailed steps, refer to [Depl
 
 3. Prepare a BookKeeper cluster.
 
-4. Copy the `pulsar-protocol-handler-mqtt-${version}.nar` to the `$PULSAR_HOME/protocols` directory.
+4. Copy the `mop-${version}.nar` to the `$PULSAR_HOME/protocols` directory.
 
 5. Start the Pulsar broker.
 

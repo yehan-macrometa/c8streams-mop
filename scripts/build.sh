@@ -28,5 +28,5 @@ ASSETS_DIR=release
 mkdir $ASSETS_DIR
 
 mvn clean install -DskipTests -Dmaven.wagon.http.retryHandler.count=3
-mv mqtt-impl/target/pulsar-protocol-handler-mqtt-*.nar  ./$ASSETS_DIR
-cp README.md ./$ASSETS_DIR/pulsar-protocol-handler-mqtt-readme.md
+mv mqtt-impl/target/mop-*.nar  ./$ASSETS_DIR
+cp README.md ./$ASSETS_DIR/mop-readme.md
