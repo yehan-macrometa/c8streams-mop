@@ -111,6 +111,30 @@ public class MQTTConsumer extends Consumer {
         return promise;
     }
 
+    public ChannelPromise sendMessage(Entry entry, MqttPublishMessage msg) {
+        ChannelPromise promise = cnx.ctx().newPromise();
+        MESSAGE_PERMITS_UPDATER.addAndGet(this, -1);
+
+        int packetId = 0;
+        if (MqttQoS.AT_MOST_ONCE != qos) {
+            packetId = packetIdGenerator.nextPacketId();
+            outstandingPacketContainer.add(new OutstandingPacket(this, packetId, entry.getLedgerId(),
+                    entry.getEntryId()));
+        }
+        String toConsumerTopicName = PulsarTopicUtils.getToConsumerTopicName(mqttTopicName, pulsarTopicName);
+        List<MqttPublishMessage> messages = PulsarMessageConverter.toMqttMessages(toConsumerTopicName, entry,
+                packetId, qos);
+
+        if (log.isDebugEnabled()) {
+            log.debug("[{}] [{}] [{}] Send MQTT message {} to subscriber", pulsarTopicName,
+                    mqttTopicName, super.getSubscription().getName(), msg);
+        }
+        metricsCollector.addReceived(msg.payload().readableBytes());
+        cnx.ctx().channel().write(msg);
+        cnx.ctx().channel().writeAndFlush(Unpooled.EMPTY_BUFFER, promise);
+        return promise;
+    }
+
     @Override
     public boolean equals(Object o) {
         return super.equals(o);

@@ -77,6 +77,7 @@ public class DefaultProtocolMethodProcessorImpl implements ProtocolMethodProcess
     private final PulsarService pulsarService;
     private final QosPublishHandlers qosPublishHandlers;
     private final MQTTServerConfiguration configuration;
+    private final MQTTCommonConsumer commonConsumer;
     private final MQTTServerCnx serverCnx;
     private final PacketIdGenerator packetIdGenerator;
     private final OutstandingPacketContainer outstandingPacketContainer;
@@ -85,9 +86,10 @@ public class DefaultProtocolMethodProcessorImpl implements ProtocolMethodProcess
     private final MQTTMetricsCollector metricsCollector;
     private final MQTTConnectionManager connectionManager;
 
-    public DefaultProtocolMethodProcessorImpl (MQTTService mqttService, ChannelHandlerContext ctx) {
+    public DefaultProtocolMethodProcessorImpl (MQTTService mqttService, ChannelHandlerContext ctx, MQTTCommonConsumer commonConsumer) {
         this.pulsarService = mqttService.getPulsarService();
         this.configuration = mqttService.getServerConfiguration();
+        this.commonConsumer = commonConsumer;
         this.qosPublishHandlers = new QosPublishHandlersImpl(pulsarService, configuration);
         this.packetIdGenerator = PacketIdGenerator.newNonZeroGenerator();
         this.outstandingPacketContainer = new OutstandingPacketContainerImpl();
@@ -356,7 +358,9 @@ public class DefaultProtocolMethodProcessorImpl implements ProtocolMethodProcess
                             MQTTConsumer consumer = new MQTTConsumer(sub, subTopic.topicName(), topic,
                                     clientID, serverCnx, subTopic.qualityOfService(), packetIdGenerator,
                                     outstandingPacketContainer, metricsCollector);
-                            sub.addConsumer(consumer);
+//                            sub.addConsumer(consumer);
+                            log.info("MqttVirtualTopics: Registering to common consumer");
+                            commonConsumer.add(subTopic.topicName(), consumer);
                             consumer.addAllPermits();
                             topicSubscriptions.putIfAbsent(sub.getTopic(), Pair.of(sub, consumer));
                         } catch (Exception e) {

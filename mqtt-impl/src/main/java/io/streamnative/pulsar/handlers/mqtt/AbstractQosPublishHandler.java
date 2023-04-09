@@ -19,6 +19,8 @@ import io.streamnative.pulsar.handlers.mqtt.utils.MessagePublishContext;
 import io.streamnative.pulsar.handlers.mqtt.utils.PulsarTopicUtils;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
+
+import lombok.extern.slf4j.Slf4j;
 import org.apache.bookkeeper.mledger.impl.PositionImpl;
 import org.apache.pulsar.broker.PulsarService;
 import org.apache.pulsar.broker.service.BrokerServiceException;
@@ -29,6 +31,7 @@ import org.apache.pulsar.common.util.FutureUtil;
 /**
  * Abstract class for publish handler.
  */
+@Slf4j
 public abstract class AbstractQosPublishHandler implements QosPublishHandler {
 
     protected final PulsarService pulsarService;
@@ -40,7 +43,8 @@ public abstract class AbstractQosPublishHandler implements QosPublishHandler {
     }
 
     protected CompletableFuture<Optional<Topic>> getTopicReference(MqttPublishMessage msg) {
-        return PulsarTopicUtils.getTopicReference(pulsarService, msg.variableHeader().topicName(),
+        log.info("MqttVirtualTopics: Returning common topic");
+        return PulsarTopicUtils.getTopicReference(pulsarService, "c8locals.LocalMqtt",
                 configuration.getDefaultTenant(), configuration.getDefaultNamespace(), true
                 , configuration.getDefaultTopicDomain());
     }

@@ -28,9 +28,17 @@ import io.netty.handler.codec.mqtt.MqttUnsubscribeMessage;
 import io.netty.handler.timeout.IdleState;
 import io.netty.handler.timeout.IdleStateEvent;
 import io.streamnative.pulsar.handlers.mqtt.support.DefaultProtocolMethodProcessorImpl;
+import io.streamnative.pulsar.handlers.mqtt.support.MQTTCommonConsumer;
+import io.streamnative.pulsar.handlers.mqtt.support.MQTTServerCnx;
 import io.streamnative.pulsar.handlers.mqtt.utils.NettyUtils;
+import io.streamnative.pulsar.handlers.mqtt.utils.PulsarTopicUtils;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.pulsar.broker.PulsarService;
+import org.apache.pulsar.broker.service.Subscription;
+
+import java.util.concurrent.ExecutionException;
+
 /**
  * MQTT in bound handler.
  */
@@ -42,6 +50,7 @@ public class MQTTInboundHandler extends ChannelInboundHandlerAdapter {
 
     @Getter
     private final MQTTService mqttService;
+    private MQTTCommonConsumer commonConsumer;
 
     public MQTTInboundHandler(MQTTService mqttService) {
         this.mqttService = mqttService;
@@ -106,7 +115,23 @@ public class MQTTInboundHandler extends ChannelInboundHandlerAdapter {
     @Override
     public void channelActive(ChannelHandlerContext ctx) throws Exception {
         super.channelActive(ctx);
-        processor = new DefaultProtocolMethodProcessorImpl(mqttService, ctx);
+        processor = new DefaultProtocolMethodProcessorImpl(mqttService, ctx, commonConsumer);
+
+        log.info("MqttVirtualTopics: Initializing common consumer");
+        PulsarService pulsarService = mqttService.getPulsarService();
+        MQTTServerConfiguration configuration = mqttService.getServerConfiguration();
+        try {
+            String topicName = "persistent://yehan_test.com/c8local.fab1/c8locals.LocalMqtt";
+            Subscription commonSub = PulsarTopicUtils
+                    .getOrCreateSubscription(pulsarService, topicName, "commonSub",
+                            configuration.getDefaultTenant(), configuration.getDefaultNamespace(),
+                            configuration.getDefaultTopicDomain()).get();
+            commonConsumer = new MQTTCommonConsumer(commonSub, topicName, "common", new MQTTServerCnx(pulsarService, ctx));
+            commonSub.addConsumer(commonConsumer);
+            log.info("MqttVirtualTopics: Common consumer initialized");
+        } catch (InterruptedException | ExecutionException e) {
+            throw new RuntimeException(e);
+        }
     }
 
     @Override

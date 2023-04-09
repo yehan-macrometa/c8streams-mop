@@ -63,7 +63,10 @@ public class PulsarMessageConverter {
     public static MessageImpl<byte[]> toPulsarMsg(MqttPublishMessage mqttMsg) {
         MessageMetadata metadata = LOCAL_MESSAGE_METADATA.get();
         metadata.clear();
-        return MessageImpl.create(metadata, mqttMsg.payload().nioBuffer(), SCHEMA);
+        MessageImpl<byte[]> pulsarMsg = MessageImpl.create(metadata, mqttMsg.payload().nioBuffer(), SCHEMA);
+        pulsarMsg.getProperties().put("virtualTopic", mqttMsg.variableHeader().topicName());
+        log.info("MqttVirtualTopics: Add pulsar topic property");
+        return pulsarMsg;
     }
 
     public static List<MqttPublishMessage> toMqttMessages(String topicName, Entry entry, int messageId, MqttQoS qos) {
