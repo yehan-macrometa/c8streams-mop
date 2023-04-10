@@ -361,7 +361,7 @@ public class DefaultProtocolMethodProcessorImpl implements ProtocolMethodProcess
 //                            sub.addConsumer(consumer);
                             log.info("MqttVirtualTopics: Registering to common consumer");
                             commonConsumer.add(subTopic.topicName(), consumer);
-                            consumer.addAllPermits();
+//                            consumer.addAllPermits();
                             topicSubscriptions.putIfAbsent(sub.getTopic(), Pair.of(sub, consumer));
                         } catch (Exception e) {
                             throw new MQTTServerException(e);

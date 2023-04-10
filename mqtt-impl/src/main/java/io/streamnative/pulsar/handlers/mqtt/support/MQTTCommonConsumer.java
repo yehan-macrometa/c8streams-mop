@@ -62,7 +62,6 @@ public class MQTTCommonConsumer extends Consumer {
                 MessageImpl<byte[]> pulsarMessage = PulsarMessageConverter.toPulsarMsg(message);
                 consumers.get(pulsarMessage.getProperty("virtualTopic")).forEach(mqttConsumer -> {
                     futures.add(mqttConsumer.sendMessage(entry, message));
-                    mqttConsumer.incrementPermits(1);
                 });
             }
 
