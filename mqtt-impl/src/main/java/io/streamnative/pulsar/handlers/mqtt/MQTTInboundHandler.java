@@ -115,13 +115,12 @@ public class MQTTInboundHandler extends ChannelInboundHandlerAdapter {
     @Override
     public void channelActive(ChannelHandlerContext ctx) throws Exception {
         super.channelActive(ctx);
-        processor = new DefaultProtocolMethodProcessorImpl(mqttService, ctx, commonConsumer);
 
         log.info("MqttVirtualTopics: Initializing common consumer");
         PulsarService pulsarService = mqttService.getPulsarService();
         MQTTServerConfiguration configuration = mqttService.getServerConfiguration();
         try {
-            String topicName = "persistent://yehan_test.com/c8local.fab1/c8locals.LocalMqtt";
+            String topicName = "c8locals.LocalMqtt";
             Subscription commonSub = PulsarTopicUtils
                     .getOrCreateSubscription(pulsarService, topicName, "commonSub",
                             configuration.getDefaultTenant(), configuration.getDefaultNamespace(),
@@ -132,6 +131,8 @@ public class MQTTInboundHandler extends ChannelInboundHandlerAdapter {
         } catch (InterruptedException | ExecutionException e) {
             throw new RuntimeException(e);
         }
+
+        processor = new DefaultProtocolMethodProcessorImpl(mqttService, ctx, commonConsumer);
     }
 
     @Override
