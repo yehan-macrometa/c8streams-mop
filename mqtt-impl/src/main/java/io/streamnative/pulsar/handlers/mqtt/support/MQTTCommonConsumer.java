@@ -16,6 +16,7 @@ package io.streamnative.pulsar.handlers.mqtt.support;
 import io.netty.handler.codec.mqtt.MqttPublishMessage;
 import io.netty.handler.codec.mqtt.MqttQoS;
 import io.netty.util.concurrent.Future;
+import io.netty.util.internal.StringUtil;
 import io.streamnative.pulsar.handlers.mqtt.utils.PulsarMessageConverter;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.bookkeeper.mledger.Entry;
@@ -60,9 +61,19 @@ public class MQTTCommonConsumer extends Consumer {
             for (MqttPublishMessage message : messages) {
                 log.info("MqttVirtualTopics: Sending message of {} entry.", entry.getEntryId());
                 MessageImpl<byte[]> pulsarMessage = PulsarMessageConverter.toPulsarMsg(message);
-                consumers.get(pulsarMessage.getProperty("virtualTopic")).forEach(mqttConsumer -> {
-                    futures.add(mqttConsumer.sendMessage(entry, message));
-                });
+
+                String virtualTopic = pulsarMessage.getProperty("virtualTopic");
+                if (StringUtil.isNullOrEmpty(virtualTopic)) {
+                    log.warn("Virtual topic name is empty for {} message of {} entry.", message.refCnt(), entry.getEntryId());
+                    continue;
+                }
+
+                List<MQTTConsumer> topicConsumers = consumers.get(virtualTopic);
+                if (topicConsumers != null) {
+                    topicConsumers.forEach(mqttConsumer -> {
+                        futures.add(mqttConsumer.sendMessage(entry, message));
+                    });
+                }
             }
 
             getSubscription().acknowledgeMessage(
