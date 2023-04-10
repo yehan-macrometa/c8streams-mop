@@ -16,6 +16,8 @@ package io.streamnative.pulsar.handlers.mqtt.support;
 import io.netty.handler.codec.mqtt.MqttPublishMessage;
 import io.netty.handler.codec.mqtt.MqttQoS;
 import io.netty.util.concurrent.Future;
+import io.netty.util.concurrent.ImmediateEventExecutor;
+import io.netty.util.concurrent.SucceededFuture;
 import io.netty.util.internal.StringUtil;
 import io.streamnative.pulsar.handlers.mqtt.utils.PulsarMessageConverter;
 import lombok.extern.slf4j.Slf4j;
@@ -35,6 +37,8 @@ import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.FutureTask;
 
 /**
  * MQTT consumer.
@@ -82,7 +86,7 @@ public class MQTTCommonConsumer extends Consumer {
         }
 
         // TODO: VirtualMqttTopic: Figure out what to send
-        return futures.get(0);
+        return new SucceededFuture<>(ImmediateEventExecutor.INSTANCE, null);
     }
 
     public void add(String mqttTopicName, MQTTConsumer consumer) {
