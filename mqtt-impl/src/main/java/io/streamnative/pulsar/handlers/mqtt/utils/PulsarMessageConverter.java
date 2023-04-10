@@ -29,6 +29,7 @@ import org.apache.pulsar.client.api.CompressionType;
 import org.apache.pulsar.client.api.Message;
 import org.apache.pulsar.client.api.Schema;
 import org.apache.pulsar.client.impl.MessageImpl;
+import org.apache.pulsar.common.api.proto.KeyValue;
 import org.apache.pulsar.common.api.proto.MessageMetadata;
 import org.apache.pulsar.common.api.proto.SingleMessageMetadata;
 import org.apache.pulsar.common.compression.CompressionCodecProvider;
@@ -72,6 +73,16 @@ public class PulsarMessageConverter {
     public static List<MqttPublishMessage> toMqttMessages(String topicName, Entry entry, int messageId, MqttQoS qos) {
         ByteBuf metadataAndPayload = entry.getDataBuffer();
         MessageMetadata metadata = Commands.parseMessageMetadata(metadataAndPayload);
+
+        if (topicName == null) {
+            for (KeyValue property : metadata.getPropertiesList()) {
+                if ("virtualTopic".equals(property.getKey())) {
+                    topicName = property.getValue();
+                    break;
+                }
+            }
+        }
+
         if (metadata.hasNumMessagesInBatch()) {
             int batchSize = metadata.getNumMessagesInBatch();
             List<MqttPublishMessage> response = new ArrayList<>(batchSize);

@@ -60,7 +60,7 @@ public class MQTTCommonConsumer extends Consumer {
 
         for (Entry entry : entries) {
             // Temporary message just to read the topic name
-            List<MqttPublishMessage> messages = PulsarMessageConverter.toMqttMessages("ignore", entry,
+            List<MqttPublishMessage> messages = PulsarMessageConverter.toMqttMessages(null, entry,
                     0, MqttQoS.AT_LEAST_ONCE);
             log.debug("MqttVirtualTopics: Sending {} messages of entry {}.", messages.size(), entry.getEntryId());
             for (MqttPublishMessage message : messages) {
