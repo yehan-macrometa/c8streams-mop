@@ -45,12 +45,12 @@ import java.util.concurrent.ExecutionException;
 @Sharable
 @Slf4j
 public class MQTTInboundHandler extends ChannelInboundHandlerAdapter {
+    private static MQTTCommonConsumer commonConsumer;
 
     private ProtocolMethodProcessor processor;
 
     @Getter
     private final MQTTService mqttService;
-    private MQTTCommonConsumer commonConsumer;
 
     public MQTTInboundHandler(MQTTService mqttService) {
         this.mqttService = mqttService;
@@ -116,20 +116,27 @@ public class MQTTInboundHandler extends ChannelInboundHandlerAdapter {
     public void channelActive(ChannelHandlerContext ctx) throws Exception {
         super.channelActive(ctx);
 
-        log.info("MqttVirtualTopics: Initializing common consumer");
-        PulsarService pulsarService = mqttService.getPulsarService();
-        MQTTServerConfiguration configuration = mqttService.getServerConfiguration();
-        try {
-            String topicName = "c8locals.LocalMqtt";
-            Subscription commonSub = PulsarTopicUtils
-                    .getOrCreateSubscription(pulsarService, topicName, "commonSub",
-                            configuration.getDefaultTenant(), configuration.getDefaultNamespace(),
-                            configuration.getDefaultTopicDomain()).get();
-            commonConsumer = new MQTTCommonConsumer(commonSub, topicName, "common", new MQTTServerCnx(pulsarService, ctx));
-            commonSub.addConsumer(commonConsumer);
-            log.info("MqttVirtualTopics: Common consumer initialized");
-        } catch (InterruptedException | ExecutionException e) {
-            throw new RuntimeException(e);
+        synchronized (MQTTInboundHandler.class) {
+            if (commonConsumer == null) {
+                log.info("MqttVirtualTopics: Initializing common consumer");
+                PulsarService pulsarService = mqttService.getPulsarService();
+                MQTTServerConfiguration configuration = mqttService.getServerConfiguration();
+                try {
+                    String topicName = "c8locals.LocalMqtt";
+                    Subscription commonSub = PulsarTopicUtils
+                            .getOrCreateSubscription(pulsarService, topicName, "commonSub",
+                                    configuration.getDefaultTenant(), configuration.getDefaultNamespace(),
+                                    configuration.getDefaultTopicDomain()).get();
+                    commonConsumer = new MQTTCommonConsumer(commonSub, topicName, "common", new MQTTServerCnx(pulsarService, ctx));
+                    commonSub.addConsumer(commonConsumer);
+                    commonConsumer.flowPermits(1000);
+                    log.info("MqttVirtualTopics: Common consumer initialized");
+                } catch (InterruptedException | ExecutionException e) {
+                    throw new RuntimeException(e);
+                }
+            } else {
+                log.info("MqttVirtualTopics: Reusing common consumer");
+            }
         }
 
         processor = new DefaultProtocolMethodProcessorImpl(mqttService, ctx, commonConsumer);
