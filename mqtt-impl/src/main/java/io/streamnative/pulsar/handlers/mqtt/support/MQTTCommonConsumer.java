@@ -55,28 +55,35 @@ public class MQTTCommonConsumer extends Consumer {
 
     @Override
     public Future<Void> sendMessages(List<Entry> entries, EntryBatchSizes batchSizes, EntryBatchIndexesAcks batchIndexesAcks, int totalMessages, long totalBytes, long totalChunkedMessages, RedeliveryTracker redeliveryTracker) {
-        log.info("MqttVirtualTopics: Sending messages");
+        log.debug("MqttVirtualTopics: Sending messages");
         List<Future> futures = new ArrayList<>();
 
         for (Entry entry : entries) {
             // Temporary message just to read the topic name
             List<MqttPublishMessage> messages = PulsarMessageConverter.toMqttMessages("ignore", entry,
                     0, MqttQoS.AT_LEAST_ONCE);
+            log.debug("MqttVirtualTopics: Sending {} messages of entry {}.", messages.size(), entry.getEntryId());
             for (MqttPublishMessage message : messages) {
-                log.info("MqttVirtualTopics: Sending message of {} entry.", entry.getEntryId());
                 MessageImpl<byte[]> pulsarMessage = PulsarMessageConverter.toPulsarMsg(message);
 
                 String virtualTopic = pulsarMessage.getProperty("virtualTopic");
                 if (StringUtil.isNullOrEmpty(virtualTopic)) {
-                    log.warn("Virtual topic name is empty for {} message of {} entry.", message.refCnt(), entry.getEntryId());
+                    log.warn("Virtual topic name is empty for {} message of {} entry.", message.refCnt(),
+                            entry.getEntryId());
                     continue;
                 }
 
+                log.debug("MqttVirtualTopics: Sending message to virtualTopic {}.", virtualTopic);
+
                 List<MQTTConsumer> topicConsumers = consumers.get(virtualTopic);
                 if (topicConsumers != null) {
+                    log.debug("MqttVirtualTopics: There are {} consumer(s) for virtualTopic {}.",
+                            topicConsumers.size(), virtualTopic);
                     topicConsumers.forEach(mqttConsumer -> {
                         futures.add(mqttConsumer.sendMessage(entry, message));
                     });
+                } else {
+                    log.debug("MqttVirtualTopics: No consumers for virtualTopic {}.", virtualTopic);
                 }
             }
 
