@@ -18,6 +18,7 @@ import io.netty.buffer.ByteBuf;
 import io.netty.handler.codec.mqtt.MqttPublishMessage;
 import io.netty.handler.codec.mqtt.MqttQoS;
 import io.netty.util.concurrent.FastThreadLocal;
+import io.netty.util.internal.StringUtil;
 import io.streamnative.pulsar.handlers.mqtt.support.MessageBuilder;
 import java.io.IOException;
 import java.util.ArrayList;
@@ -64,7 +65,10 @@ public class PulsarMessageConverter {
     public static MessageImpl<byte[]> toPulsarMsg(MqttPublishMessage mqttMsg) {
         MessageMetadata metadata = LOCAL_MESSAGE_METADATA.get();
         metadata.clear();
-        metadata.addProperty().setKey("virtualTopic").setValue(mqttMsg.variableHeader().topicName());
+        String topicName = mqttMsg.variableHeader().topicName();
+        if (!StringUtil.isNullOrEmpty(topicName)) {
+            metadata.addProperty().setKey("virtualTopic").setValue(topicName);
+        }
         MessageImpl<byte[]> pulsarMsg = MessageImpl.create(metadata, mqttMsg.payload().nioBuffer(), SCHEMA);
         log.info("MqttVirtualTopics: Add pulsar topic property");
         return pulsarMsg;
@@ -127,6 +131,11 @@ public class PulsarMessageConverter {
         MessageImpl<byte[]> msg = (MessageImpl<byte[]>) message;
         MessageMetadata metadata = LOCAL_MESSAGE_METADATA.get();
         metadata.clear();
+        String virtualTopic = msg.getProperty("virtualTopic");
+        if (!StringUtil.isNullOrEmpty(virtualTopic)) {
+            metadata.addProperty().setKey("virtualTopic").setValue(msg.getProperty("virtualTopic"));
+            log.debug("messageToByteBuf virtualTopic>>> " + msg.getProperty("virtualTopic"));
+        }
         ByteBuf payload = msg.getDataBuffer();
 
         // filled in required fields
