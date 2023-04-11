@@ -76,6 +76,7 @@ public class PulsarMessageConverter {
 
     public static List<MqttPublishMessage> toMqttMessages(String topicName, Entry entry, int messageId, MqttQoS qos) {
         ByteBuf metadataAndPayload = entry.getDataBuffer();
+        Commands.skipBrokerEntryMetadataIfExist(metadataAndPayload);
         MessageMetadata metadata = Commands.parseMessageMetadata(metadataAndPayload);
 
         if (topicName == null) {
@@ -135,6 +136,7 @@ public class PulsarMessageConverter {
         if (!StringUtil.isNullOrEmpty(virtualTopic)) {
             metadata.addProperty().setKey("virtualTopic").setValue(msg.getProperty("virtualTopic"));
             log.debug("messageToByteBuf virtualTopic>>> " + msg.getProperty("virtualTopic"));
+            msg.getProperties().remove("virtualTopic");
         }
         ByteBuf payload = msg.getDataBuffer();
 
