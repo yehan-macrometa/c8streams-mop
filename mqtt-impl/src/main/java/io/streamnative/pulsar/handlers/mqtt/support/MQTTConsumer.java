@@ -153,14 +153,14 @@ public class MQTTConsumer extends Consumer {
         int var = ADD_PERMITS_UPDATER.addAndGet(this, permits);
         if (var > maxPermits / 2) {
             MESSAGE_PERMITS_UPDATER.addAndGet(this, var);
-            this.getSubscription().consumerFlow(this, availablePermits);
+//            this.getSubscription().consumerFlow(this, availablePermits);
             ADD_PERMITS_UPDATER.set(this, 0);
         }
     }
 
     public void addAllPermits() {
         this.availablePermits = maxPermits;
-        this.getSubscription().consumerFlow(this, availablePermits);
+//        this.getSubscription().consumerFlow(this, availablePermits);
     }
 
     @Override
