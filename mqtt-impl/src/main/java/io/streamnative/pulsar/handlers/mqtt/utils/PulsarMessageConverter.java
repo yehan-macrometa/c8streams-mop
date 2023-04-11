@@ -63,12 +63,18 @@ public class PulsarMessageConverter {
     public static MessageImpl<byte[]> toPulsarMsg(MqttPublishMessage mqttMsg) {
         MessageMetadata metadata = LOCAL_MESSAGE_METADATA.get();
         metadata.clear();
-        return MessageImpl.create(metadata, mqttMsg.payload().nioBuffer(), SCHEMA);
+        metadata.addProperty().setKey("virtualTopic").setValue(mqttMsg.variableHeader().topicName());
+        MessageImpl<byte[]> msg = MessageImpl.create(metadata, mqttMsg.payload().nioBuffer(), SCHEMA);
+        log.info("Publish virtualTopic>>> " + msg.getProperty("virtualTopic"));
+        return msg;
     }
 
     public static List<MqttPublishMessage> toMqttMessages(String topicName, Entry entry, int messageId, MqttQoS qos) {
         ByteBuf metadataAndPayload = entry.getDataBuffer();
         MessageMetadata metadata = Commands.parseMessageMetadata(metadataAndPayload);
+        for (KeyValue property : metadata.getPropertiesList()) {
+            log.info("Subscribe virtualTopic>>> " + property.getKey() + "" + property.getValue());
+        }
         if (metadata.hasNumMessagesInBatch()) {
             int batchSize = metadata.getNumMessagesInBatch();
             List<MqttPublishMessage> response = new ArrayList<>(batchSize);
@@ -113,6 +119,11 @@ public class PulsarMessageConverter {
         MessageImpl<byte[]> msg = (MessageImpl<byte[]>) message;
         MessageMetadata metadata = LOCAL_MESSAGE_METADATA.get();
         metadata.clear();
+        String virtualTopic = msg.getProperty("virtualTopic");
+        if (virtualTopic != null) {
+            metadata.addProperty().setKey("virtualTopic").setValue(msg.getProperty("virtualTopic"));
+            log.info("messageToByteBuf virtualTopic>>> " + msg.getProperty("virtualTopic"));
+        }
         ByteBuf payload = msg.getDataBuffer();
 
         // filled in required fields
