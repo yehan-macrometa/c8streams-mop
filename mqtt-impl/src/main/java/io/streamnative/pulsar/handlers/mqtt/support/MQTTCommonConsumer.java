@@ -39,6 +39,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 /**
  * MQTT consumer.
@@ -47,6 +49,7 @@ import java.util.concurrent.CopyOnWriteArrayList;
 public class MQTTCommonConsumer extends Consumer {
     private Map<String, List<MQTTConsumer>> consumers = new ConcurrentHashMap<>();
     private final PacketIdGenerator packetIdGenerator;
+    private final ExecutorService executor = Executors.newWorkStealingPool(50);
 
     public MQTTCommonConsumer(Subscription subscription, String pulsarTopicName, String consumerName, MQTTServerCnx cnx, PacketIdGenerator packetIdGenerator) {
         super(subscription, CommandSubscribe.SubType.Shared, pulsarTopicName, 0, 0, consumerName, 0, cnx,
@@ -61,42 +64,44 @@ public class MQTTCommonConsumer extends Consumer {
         List<Future> futures = new ArrayList<>();
 
         for (Entry entry : entries) {
-            // Temporary message just to read the topic name
-            List<MqttPublishMessage> messages = PulsarMessageConverter.toMqttMessages(null, entry,
-                    packetIdGenerator.nextPacketId(), MqttQoS.AT_LEAST_ONCE);
-            log.debug("MqttVirtualTopics: Sending {} messages of entry {}.", messages.size(), entry.getEntryId());
-            for (MqttPublishMessage message : messages) {
-                MessageImpl<byte[]> pulsarMessage = PulsarMessageConverter.toPulsarMsg(message);
+            executor.execute(() -> {
+                // Temporary message just to read the topic name
+                List<MqttPublishMessage> messages = PulsarMessageConverter.toMqttMessages(null, entry,
+                        packetIdGenerator.nextPacketId(), MqttQoS.AT_LEAST_ONCE);
+                log.debug("MqttVirtualTopics: Sending {} messages of entry {}.", messages.size(), entry.getEntryId());
+                for (MqttPublishMessage message : messages) {
+                    MessageImpl<byte[]> pulsarMessage = PulsarMessageConverter.toPulsarMsg(message);
 
-                String virtualTopic = pulsarMessage.getProperty("virtualTopic");
-                if (StringUtil.isNullOrEmpty(virtualTopic)) {
-                    log.warn("Virtual topic name is empty for {} message of {} entry.", message.refCnt(),
-                            entry.getEntryId());
-                    continue;
+                    String virtualTopic = pulsarMessage.getProperty("virtualTopic");
+                    if (StringUtil.isNullOrEmpty(virtualTopic)) {
+                        log.warn("Virtual topic name is empty for {} message of {} entry.", message.refCnt(),
+                                entry.getEntryId());
+                        continue;
+                    }
+
+                    log.debug("MqttVirtualTopics: Sending message to virtualTopic {}.", virtualTopic);
+
+                    List<MQTTConsumer> topicConsumers = consumers.get(virtualTopic);
+                    if (topicConsumers != null) {
+                        log.debug("MqttVirtualTopics: There are {} consumer(s) for virtualTopic {}.",
+                                topicConsumers.size(), virtualTopic);
+                        topicConsumers.forEach(mqttConsumer -> {
+                            try {
+                                futures.add(mqttConsumer.sendMessage(entry, message));
+                            } catch (Exception e) {
+                                // TODO: We need to fix each issue possible.
+                                // But we cannot allow one consumer to stop sending messages to all other consumers.
+                                // A crash here does that.
+                                // So have to catch it.
+                                log.error("Could not send the message to consumer {}-{}.", mqttConsumer.consumerName(),
+                                        mqttConsumer.consumerId(), e);
+                            }
+                        });
+                    } else {
+                        log.debug("MqttVirtualTopics: No consumers for virtualTopic {}.", virtualTopic);
+                    }
                 }
-
-                log.debug("MqttVirtualTopics: Sending message to virtualTopic {}.", virtualTopic);
-
-                List<MQTTConsumer> topicConsumers = consumers.get(virtualTopic);
-                if (topicConsumers != null) {
-                    log.debug("MqttVirtualTopics: There are {} consumer(s) for virtualTopic {}.",
-                            topicConsumers.size(), virtualTopic);
-                    topicConsumers.forEach(mqttConsumer -> {
-                        try {
-                            futures.add(mqttConsumer.sendMessage(entry, message));
-                        } catch (Exception e) {
-                            // TODO: We need to fix each issue possible.
-                            // But we cannot allow one consumer to stop sending messages to all other consumers.
-                            // A crash here does that.
-                            // So have to catch it.
-                            log.error("Could not send the message to consumer {}-{}.", mqttConsumer.consumerName(),
-                                    mqttConsumer.consumerId(), e);
-                        }
-                    });
-                } else {
-                    log.debug("MqttVirtualTopics: No consumers for virtualTopic {}.", virtualTopic);
-                }
-            }
+            });
 
             getSubscription().acknowledgeMessage(
                     Collections.singletonList(entries.get(entries.size() - 1).getPosition()),
