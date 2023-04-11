@@ -24,6 +24,7 @@ import io.netty.handler.codec.mqtt.MqttMessage;
 import io.netty.handler.codec.mqtt.MqttPubAckMessage;
 import io.netty.handler.codec.mqtt.MqttPublishMessage;
 import io.netty.handler.codec.mqtt.MqttSubscribeMessage;
+import io.netty.handler.codec.mqtt.MqttTopicSubscription;
 import io.netty.handler.codec.mqtt.MqttUnsubscribeMessage;
 import io.streamnative.pulsar.handlers.mqtt.Connection;
 import io.streamnative.pulsar.handlers.mqtt.MQTTAuthenticationService;
@@ -34,11 +35,15 @@ import io.streamnative.pulsar.handlers.mqtt.utils.NettyUtils;
 import io.streamnative.pulsar.handlers.mqtt.utils.PulsarTopicUtils;
 import java.net.InetSocketAddress;
 import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.stream.Collectors;
+
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.pulsar.broker.PulsarService;
@@ -135,7 +140,17 @@ public class MQTTProxyProtocolMethodProcessor implements ProtocolMethodProcessor
             log.debug("[Proxy Publish] publish to topic = {}, CId={}",
                     msg.variableHeader().topicName(), NettyUtils.getClientId(channel));
         }
-        String pulsarTopicName = PulsarTopicUtils.getEncodedPulsarTopicName(msg.variableHeader().topicName(),
+        final String topic;
+        if (proxyConfig.getSharder() != null) {
+            topic = proxyConfig.getSharder().getShardId(msg.variableHeader().topicName());
+            if (log.isDebugEnabled()) {
+                log.debug("[Proxy Publish] send topic = {} to real topic = {}, CId={}",
+                    msg.variableHeader().topicName(), topic, NettyUtils.getClientId(channel));
+            }
+        } else {
+            topic = msg.variableHeader().topicName();
+        }
+        String pulsarTopicName = PulsarTopicUtils.getEncodedPulsarTopicName(topic,
                 proxyConfig.getDefaultTenant(), proxyConfig.getDefaultNamespace(),
                 TopicDomain.getEnum(proxyConfig.getDefaultTopicDomain()));
         CompletableFuture<InetSocketAddress> lookupResult = lookupHandler.findBroker(
@@ -143,7 +158,7 @@ public class MQTTProxyProtocolMethodProcessor implements ProtocolMethodProcessor
         lookupResult.whenComplete((brokerAddress, throwable) -> {
             if (null != throwable) {
                 log.error("[Proxy Publish] Failed to perform lookup request for topic : {}, CId : {}",
-                        msg.variableHeader().topicName(), NettyUtils.getClientId(channel), throwable);
+                        topic, NettyUtils.getClientId(channel), throwable);
                 channel.close();
                 return;
             }
@@ -220,9 +235,28 @@ public class MQTTProxyProtocolMethodProcessor implements ProtocolMethodProcessor
         if (log.isDebugEnabled()) {
             log.debug("[Proxy Subscribe] [{}] msg: {}", clientId, msg);
         }
-        CompletableFuture<List<String>> topicListFuture = PulsarTopicUtils.asyncGetTopicsForSubscribeMsg(msg,
+        CompletableFuture<List<String>> topicListFuture;
+        if (proxyConfig.getSharder() != null) {
+            List<String> topicNames = msg.payload().topicSubscriptions().stream()
+                .map(s -> {
+                    String topic = proxyConfig.getSharder().getShardId(s.topicName());
+                    if (log.isDebugEnabled()) {
+                        log.debug("[Proxy Subscribe] send topic = {} to real topic = {}, CId={}",
+                            s.topicName(), topic, NettyUtils.getClientId(channel));
+                    }
+                    return topic;
+                })
+                .collect(Collectors.toList());
+
+            topicListFuture = PulsarTopicUtils.asyncGetTopicsForSubscribeMsg(topicNames,
                 proxyConfig.getDefaultTenant(), proxyConfig.getDefaultNamespace(), pulsarService,
                 proxyConfig.getDefaultTopicDomain());
+
+        } else {
+            topicListFuture = PulsarTopicUtils.asyncGetTopicsForSubscribeMsg(msg,
+                proxyConfig.getDefaultTenant(), proxyConfig.getDefaultNamespace(), pulsarService,
+                proxyConfig.getDefaultTopicDomain());
+        }
 
         if (topicListFuture == null) {
             channel.close();
@@ -251,7 +285,22 @@ public class MQTTProxyProtocolMethodProcessor implements ProtocolMethodProcessor
         if (log.isDebugEnabled()) {
             log.debug("[Proxy UnSubscribe] [{}]", NettyUtils.getClientId(channel));
         }
-        List<String> topics = msg.payload().topics();
+        List<String> topics;
+        if (proxyConfig.getSharder() != null) {
+            topics = msg.payload().topics().stream()
+                .map(t -> {
+                    String topic = proxyConfig.getSharder().getShardId(t);
+                    if (log.isDebugEnabled()) {
+                        log.debug("[Proxy UnSubscribe] send topic = {} to real topic = {}, CId={}",
+                            t, topic, NettyUtils.getClientId(channel));
+                    }
+                    return topic;
+                })
+                .collect(Collectors.toList());
+
+        } else {
+            topics = msg.payload().topics();
+        }
         for (String topic : topics) {
             CompletableFuture<InetSocketAddress> lookupResult = lookupHandler.findBroker(TopicName.get(topic));
             lookupResult.whenComplete((brokerAddress, throwable) -> {
