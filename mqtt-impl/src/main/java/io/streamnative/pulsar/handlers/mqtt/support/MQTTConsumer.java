@@ -122,8 +122,8 @@ public class MQTTConsumer extends Consumer {
                     entry.getEntryId()));
         }
         String toConsumerTopicName = PulsarTopicUtils.getToConsumerTopicName(mqttTopicName, pulsarTopicName);
-        List<MqttPublishMessage> messages = PulsarMessageConverter.toMqttMessages(toConsumerTopicName, entry,
-                packetId, qos);
+//        List<MqttPublishMessage> messages = PulsarMessageConverter.toMqttMessages(toConsumerTopicName, entry,
+//                packetId, qos);
 
         if (log.isDebugEnabled()) {
             log.debug("[{}] [{}] [{}] Send MQTT message {} to subscriber", pulsarTopicName,
