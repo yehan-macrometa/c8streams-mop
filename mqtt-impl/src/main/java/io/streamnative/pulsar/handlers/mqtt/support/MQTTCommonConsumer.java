@@ -82,7 +82,16 @@ public class MQTTCommonConsumer extends Consumer {
                     log.debug("MqttVirtualTopics: There are {} consumer(s) for virtualTopic {}.",
                             topicConsumers.size(), virtualTopic);
                     topicConsumers.forEach(mqttConsumer -> {
-                        futures.add(mqttConsumer.sendMessage(entry, message));
+                        try {
+                            futures.add(mqttConsumer.sendMessage(entry, message));
+                        } catch (Exception e) {
+                            // TODO: We need to fix each issue possible.
+                            // But we cannot allow one consumer to stop sending messages to all other consumers.
+                            // A crash here does that.
+                            // So have to catch it.
+                            log.error("Could not send the message to consumer {}-{}.", mqttConsumer.consumerName(),
+                                    mqttConsumer.consumerId(), e);
+                        }
                     });
                 } else {
                     log.debug("MqttVirtualTopics: No consumers for virtualTopic {}.", virtualTopic);
