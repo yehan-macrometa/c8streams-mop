@@ -38,6 +38,8 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.FutureTask;
 
 /**
@@ -45,7 +47,7 @@ import java.util.concurrent.FutureTask;
  */
 @Slf4j
 public class MQTTCommonConsumer extends Consumer {
-    private Map<String, List<MQTTConsumer>> consumers = new HashMap<>();
+    private Map<String, List<MQTTConsumer>> consumers = new ConcurrentHashMap<>();
 
     public MQTTCommonConsumer(Subscription subscription, String pulsarTopicName, String consumerName, MQTTServerCnx cnx) {
         super(subscription, CommandSubscribe.SubType.Shared, pulsarTopicName, 0, 0, consumerName, 0, cnx,
@@ -97,7 +99,7 @@ public class MQTTCommonConsumer extends Consumer {
     }
 
     public void add(String mqttTopicName, MQTTConsumer consumer) {
-        consumers.computeIfAbsent(mqttTopicName, s -> new ArrayList<>()).add(consumer);
+        consumers.computeIfAbsent(mqttTopicName, s -> new CopyOnWriteArrayList<>()).add(consumer);
     }
 
     public void remove(String mqttTopicName, MQTTConsumer consumer) {
