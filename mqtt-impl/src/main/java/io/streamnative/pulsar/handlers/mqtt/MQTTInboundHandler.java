@@ -45,7 +45,7 @@ import java.util.concurrent.ExecutionException;
 @Sharable
 @Slf4j
 public class MQTTInboundHandler extends ChannelInboundHandlerAdapter {
-    private static MQTTCommonConsumer commonConsumer;
+    static MQTTCommonConsumer commonConsumer;
 
     private ProtocolMethodProcessor processor;
 

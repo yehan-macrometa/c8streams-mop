@@ -418,6 +418,7 @@ public class DefaultProtocolMethodProcessorImpl implements ProtocolMethodProcess
                                     MQTTConsumer consumer = new MQTTConsumer(subscription, topicFilter,
                                         topic, clientID, serverCnx, qos, packetIdGenerator,
                                             outstandingPacketContainer, metricsCollector);
+                                    commonConsumer.remove(topicFilter, consumer);
                                     topicOp.get().getSubscription(clientID).removeConsumer(consumer);
                                     futures.add(topicOp.get().unsubscribe(clientID));
                                 } catch (Exception e) {

@@ -99,4 +99,10 @@ public class MQTTCommonConsumer extends Consumer {
     public void add(String mqttTopicName, MQTTConsumer consumer) {
         consumers.computeIfAbsent(mqttTopicName, s -> new ArrayList<>()).add(consumer);
     }
+
+    public void remove(String mqttTopicName, MQTTConsumer consumer) {
+        if (consumers.containsKey(mqttTopicName)) {
+            consumers.get(mqttTopicName).remove(consumer);
+        }
+    }
 }
