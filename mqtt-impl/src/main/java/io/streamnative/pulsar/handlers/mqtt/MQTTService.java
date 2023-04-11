@@ -13,13 +13,20 @@
  */
 package io.streamnative.pulsar.handlers.mqtt;
 
+import io.streamnative.pulsar.handlers.mqtt.support.MQTTCommonConsumer;
 import io.streamnative.pulsar.handlers.mqtt.support.MQTTMetricsCollector;
 import io.streamnative.pulsar.handlers.mqtt.support.MQTTMetricsProvider;
+import io.streamnative.pulsar.handlers.mqtt.utils.PulsarTopicUtils;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.pulsar.broker.PulsarService;
 import org.apache.pulsar.broker.authorization.AuthorizationService;
 import org.apache.pulsar.broker.service.BrokerService;
+import org.apache.pulsar.broker.service.Subscription;
+
+import java.util.Map;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * Main class for mqtt service.
@@ -51,6 +58,9 @@ public class MQTTService {
     @Getter
     private final MQTTConnectionManager connectionManager;
 
+    @Getter
+    private final Map<String, MQTTCommonConsumer> commonSubscriberMap;
+
     public MQTTService(BrokerService brokerService, MQTTServerConfiguration serverConfiguration) {
         this.brokerService = brokerService;
         this.pulsarService = brokerService.pulsar();
@@ -63,5 +73,19 @@ public class MQTTService {
             ? new MQTTAuthenticationService(brokerService.getAuthenticationService(),
                 serverConfiguration.getMqttAuthenticationMethods()) : null;
         this.connectionManager = new MQTTConnectionManager();
+        this.commonSubscriberMap = new ConcurrentHashMap<>();
+    }
+
+    public CompletableFuture<Subscription> getCommonSubscription(String virtualTopic) {
+        if (serverConfiguration.getSharder() != null) {
+            String realTopic = serverConfiguration.getSharder().getShardId(virtualTopic);
+            CompletableFuture<Subscription> commonSub = PulsarTopicUtils
+                .getOrCreateSubscription(pulsarService, realTopic, "commonSub",
+                    serverConfiguration.getDefaultTenant(), serverConfiguration.getDefaultNamespace(),
+                    serverConfiguration.getDefaultTopicDomain());
+            log.info("MqttVirtualTopics: Common consumer initialized");
+            return commonSub;
+        }
+        return null;
     }
 }

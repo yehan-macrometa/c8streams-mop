@@ -84,6 +84,7 @@ public class DefaultProtocolMethodProcessorImpl implements ProtocolMethodProcess
     private final AuthorizationService authorizationService;
     private final MQTTMetricsCollector metricsCollector;
     private final MQTTConnectionManager connectionManager;
+    private final MQTTService mqttService;
 
     public DefaultProtocolMethodProcessorImpl (MQTTService mqttService, ChannelHandlerContext ctx) {
         this.pulsarService = mqttService.getPulsarService();
@@ -96,6 +97,7 @@ public class DefaultProtocolMethodProcessorImpl implements ProtocolMethodProcess
         this.metricsCollector = mqttService.getMetricsCollector();
         this.connectionManager = mqttService.getConnectionManager();
         this.serverCnx = new MQTTServerCnx(pulsarService, ctx);
+        this.mqttService = mqttService;
     }
 
     @Override
@@ -351,11 +353,13 @@ public class DefaultProtocolMethodProcessorImpl implements ProtocolMethodProcess
                             .getOrCreateSubscription(pulsarService, topic, clientID,
                                     configuration.getDefaultTenant(), configuration.getDefaultNamespace(),
                                     configuration.getDefaultTopicDomain());
+                    //CompletableFuture<Subscription> subFuture = mqttService.getCommonSubscription(topic);
                     CompletableFuture<Void> result = subFuture.thenAccept(sub -> {
                         try {
                             MQTTConsumer consumer = new MQTTConsumer(sub, subTopic.topicName(), topic,
                                     clientID, serverCnx, subTopic.qualityOfService(), packetIdGenerator,
                                     outstandingPacketContainer, metricsCollector);
+
                             sub.addConsumer(consumer);
                             consumer.addAllPermits();
                             topicSubscriptions.putIfAbsent(sub.getTopic(), Pair.of(sub, consumer));
