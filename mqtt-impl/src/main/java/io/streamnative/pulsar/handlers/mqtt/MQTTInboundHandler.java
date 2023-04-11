@@ -45,6 +45,7 @@ import java.util.concurrent.ExecutionException;
 @Sharable
 @Slf4j
 public class MQTTInboundHandler extends ChannelInboundHandlerAdapter {
+    private PacketIdGenerator packetIdGenerator = PacketIdGenerator.newNonZeroGenerator();
     static MQTTCommonConsumer commonConsumer;
 
     private ProtocolMethodProcessor processor;
@@ -127,7 +128,7 @@ public class MQTTInboundHandler extends ChannelInboundHandlerAdapter {
                             .getOrCreateSubscription(pulsarService, topicName, "commonSub",
                                     configuration.getDefaultTenant(), configuration.getDefaultNamespace(),
                                     configuration.getDefaultTopicDomain()).get();
-                    commonConsumer = new MQTTCommonConsumer(commonSub, topicName, "common", new MQTTServerCnx(pulsarService, ctx));
+                    commonConsumer = new MQTTCommonConsumer(commonSub, topicName, "common", new MQTTServerCnx(pulsarService, ctx), packetIdGenerator);
                     commonSub.addConsumer(commonConsumer);
                     commonConsumer.flowPermits(1000);
                     log.info("MqttVirtualTopics: Common consumer initialized");

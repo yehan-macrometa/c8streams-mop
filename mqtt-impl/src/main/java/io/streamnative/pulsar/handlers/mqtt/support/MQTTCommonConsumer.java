@@ -19,6 +19,7 @@ import io.netty.util.concurrent.Future;
 import io.netty.util.concurrent.ImmediateEventExecutor;
 import io.netty.util.concurrent.SucceededFuture;
 import io.netty.util.internal.StringUtil;
+import io.streamnative.pulsar.handlers.mqtt.PacketIdGenerator;
 import io.streamnative.pulsar.handlers.mqtt.utils.PulsarMessageConverter;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.bookkeeper.mledger.Entry;
@@ -34,13 +35,10 @@ import org.apache.pulsar.common.api.proto.CommandSubscribe;
 
 import java.util.ArrayList;
 import java.util.Collections;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
-import java.util.concurrent.FutureTask;
 
 /**
  * MQTT consumer.
@@ -48,11 +46,13 @@ import java.util.concurrent.FutureTask;
 @Slf4j
 public class MQTTCommonConsumer extends Consumer {
     private Map<String, List<MQTTConsumer>> consumers = new ConcurrentHashMap<>();
+    private final PacketIdGenerator packetIdGenerator;
 
-    public MQTTCommonConsumer(Subscription subscription, String pulsarTopicName, String consumerName, MQTTServerCnx cnx) {
+    public MQTTCommonConsumer(Subscription subscription, String pulsarTopicName, String consumerName, MQTTServerCnx cnx, PacketIdGenerator packetIdGenerator) {
         super(subscription, CommandSubscribe.SubType.Shared, pulsarTopicName, 0, 0, consumerName, 0, cnx,
 
                 "", null, false, CommandSubscribe.InitialPosition.Latest, null, MessageId.latest);
+        this.packetIdGenerator = packetIdGenerator;
     }
 
     @Override
@@ -63,7 +63,7 @@ public class MQTTCommonConsumer extends Consumer {
         for (Entry entry : entries) {
             // Temporary message just to read the topic name
             List<MqttPublishMessage> messages = PulsarMessageConverter.toMqttMessages(null, entry,
-                    0, MqttQoS.AT_LEAST_ONCE);
+                    packetIdGenerator.nextPacketId(), MqttQoS.AT_LEAST_ONCE);
             log.debug("MqttVirtualTopics: Sending {} messages of entry {}.", messages.size(), entry.getEntryId());
             for (MqttPublishMessage message : messages) {
                 MessageImpl<byte[]> pulsarMessage = PulsarMessageConverter.toPulsarMsg(message);
