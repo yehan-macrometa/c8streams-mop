@@ -29,7 +29,6 @@ import org.apache.pulsar.broker.service.EntryBatchSizes;
 import org.apache.pulsar.broker.service.RedeliveryTracker;
 import org.apache.pulsar.broker.service.Subscription;
 import org.apache.pulsar.client.api.MessageId;
-import org.apache.pulsar.client.impl.MessageImpl;
 import org.apache.pulsar.common.api.proto.CommandAck;
 import org.apache.pulsar.common.api.proto.CommandSubscribe;
 
@@ -66,9 +65,7 @@ public class MQTTCommonConsumer extends Consumer {
                     packetIdGenerator.nextPacketId(), MqttQoS.AT_LEAST_ONCE);
             log.debug("MqttVirtualTopics: Sending {} messages of entry {}.", messages.size(), entry.getEntryId());
             for (MqttPublishMessage message : messages) {
-                MessageImpl<byte[]> pulsarMessage = PulsarMessageConverter.toPulsarMsg(message);
-
-                String virtualTopic = pulsarMessage.getProperty("virtualTopic");
+                String virtualTopic = message.variableHeader().topicName();
                 if (StringUtil.isNullOrEmpty(virtualTopic)) {
                     log.warn("Virtual topic name is empty for {} message of {} entry.", message.refCnt(),
                             entry.getEntryId());
@@ -97,11 +94,11 @@ public class MQTTCommonConsumer extends Consumer {
                     log.debug("MqttVirtualTopics: No consumers for virtualTopic {}.", virtualTopic);
                 }
             }
-
-            getSubscription().acknowledgeMessage(
-                    Collections.singletonList(entries.get(entries.size() - 1).getPosition()),
-                    CommandAck.AckType.Cumulative, Collections.emptyMap());
         }
+
+        getSubscription().acknowledgeMessage(
+                Collections.singletonList(entries.get(entries.size() - 1).getPosition()),
+                CommandAck.AckType.Cumulative, Collections.emptyMap());
 
         // TODO: VirtualMqttTopic: Figure out what to send
         return new SucceededFuture<>(ImmediateEventExecutor.INSTANCE, null);
