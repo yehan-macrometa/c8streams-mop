@@ -37,6 +37,8 @@ import lombok.extern.slf4j.Slf4j;
 import org.apache.pulsar.broker.PulsarService;
 import org.apache.pulsar.broker.service.Subscription;
 
+import java.util.List;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.ExecutionException;
 
 /**
@@ -46,7 +48,7 @@ import java.util.concurrent.ExecutionException;
 @Slf4j
 public class MQTTInboundHandler extends ChannelInboundHandlerAdapter {
     private PacketIdGenerator packetIdGenerator = PacketIdGenerator.newNonZeroGenerator();
-    static MQTTCommonConsumer commonConsumer;
+    static List<MQTTCommonConsumer> commonConsumers = new CopyOnWriteArrayList<>();
 
     private ProtocolMethodProcessor processor;
 
@@ -118,7 +120,7 @@ public class MQTTInboundHandler extends ChannelInboundHandlerAdapter {
         super.channelActive(ctx);
 
         synchronized (MQTTInboundHandler.class) {
-            if (commonConsumer == null) {
+            if (commonConsumers.size() == 0) {
                 log.info("MqttVirtualTopics: Initializing common consumer");
                 PulsarService pulsarService = mqttService.getPulsarService();
                 MQTTServerConfiguration configuration = mqttService.getServerConfiguration();
@@ -128,9 +130,12 @@ public class MQTTInboundHandler extends ChannelInboundHandlerAdapter {
                             .getOrCreateSubscription(pulsarService, topicName, "commonSub",
                                     configuration.getDefaultTenant(), configuration.getDefaultNamespace(),
                                     configuration.getDefaultTopicDomain()).get();
-                    commonConsumer = new MQTTCommonConsumer(commonSub, topicName, "common", new MQTTServerCnx(pulsarService, ctx), packetIdGenerator);
-                    commonSub.addConsumer(commonConsumer);
-                    commonConsumer.flowPermits(1000);
+                    for (int i = 0; i < 2; i++) {
+                        MQTTCommonConsumer consumer = new MQTTCommonConsumer(commonSub, topicName, "common-" + i, new MQTTServerCnx(pulsarService, ctx), packetIdGenerator);
+                        commonConsumers.add(consumer);
+                        commonSub.addConsumer(consumer);
+                        consumer.flowPermits(1000);
+                    }
                     log.info("MqttVirtualTopics: Common consumer initialized");
                 } catch (InterruptedException | ExecutionException e) {
                     throw new RuntimeException(e);
@@ -140,7 +145,7 @@ public class MQTTInboundHandler extends ChannelInboundHandlerAdapter {
             }
         }
 
-        processor = new DefaultProtocolMethodProcessorImpl(mqttService, ctx, commonConsumer);
+        processor = new DefaultProtocolMethodProcessorImpl(mqttService, ctx, commonConsumers);
     }
 
     @Override

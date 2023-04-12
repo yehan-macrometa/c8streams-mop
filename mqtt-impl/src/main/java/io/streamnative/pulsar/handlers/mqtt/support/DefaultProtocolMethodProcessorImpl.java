@@ -49,14 +49,12 @@ import io.streamnative.pulsar.handlers.mqtt.utils.MqttMessageUtils;
 import io.streamnative.pulsar.handlers.mqtt.utils.NettyUtils;
 import io.streamnative.pulsar.handlers.mqtt.utils.PulsarTopicUtils;
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
 import lombok.extern.slf4j.Slf4j;
-import org.apache.bookkeeper.mledger.impl.PositionImpl;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.commons.lang3.tuple.Pair;
 import org.apache.pulsar.broker.PulsarService;
@@ -65,7 +63,6 @@ import org.apache.pulsar.broker.authorization.AuthorizationService;
 import org.apache.pulsar.broker.service.Consumer;
 import org.apache.pulsar.broker.service.Subscription;
 import org.apache.pulsar.broker.service.Topic;
-import org.apache.pulsar.common.api.proto.CommandAck;
 import org.apache.pulsar.common.naming.TopicName;
 import org.apache.pulsar.common.util.FutureUtil;
 
@@ -77,7 +74,7 @@ public class DefaultProtocolMethodProcessorImpl implements ProtocolMethodProcess
     private final PulsarService pulsarService;
     private final QosPublishHandlers qosPublishHandlers;
     private final MQTTServerConfiguration configuration;
-    private final MQTTCommonConsumer commonConsumer;
+    private final List<MQTTCommonConsumer> commonConsumers;
     private final MQTTServerCnx serverCnx;
     private final PacketIdGenerator packetIdGenerator;
     private final OutstandingPacketContainer outstandingPacketContainer;
@@ -86,10 +83,10 @@ public class DefaultProtocolMethodProcessorImpl implements ProtocolMethodProcess
     private final MQTTMetricsCollector metricsCollector;
     private final MQTTConnectionManager connectionManager;
 
-    public DefaultProtocolMethodProcessorImpl (MQTTService mqttService, ChannelHandlerContext ctx, MQTTCommonConsumer commonConsumer) {
+    public DefaultProtocolMethodProcessorImpl (MQTTService mqttService, ChannelHandlerContext ctx, List<MQTTCommonConsumer> commonConsumers) {
         this.pulsarService = mqttService.getPulsarService();
         this.configuration = mqttService.getServerConfiguration();
-        this.commonConsumer = commonConsumer;
+        this.commonConsumers = commonConsumers;
         this.qosPublishHandlers = new QosPublishHandlersImpl(pulsarService, configuration);
         this.packetIdGenerator = PacketIdGenerator.newNonZeroGenerator();
         this.outstandingPacketContainer = new OutstandingPacketContainerImpl();
@@ -179,8 +176,10 @@ public class DefaultProtocolMethodProcessorImpl implements ProtocolMethodProcess
             log.debug("[PubAck] [{}] Outstanding Packet found: {}.", NettyUtils.getClientId(channel), packet != null);
         }
         if (packet != null) {
-            commonConsumer.acknowledgeMessage(packet.getLedgerId(), packet.getEntryId());
-            commonConsumer.getPendingAcks().remove(packet.getLedgerId(), packet.getEntryId());
+            commonConsumers.forEach(c -> {
+                c.acknowledgeMessage(packet.getLedgerId(), packet.getEntryId());
+                c.getPendingAcks().remove(packet.getLedgerId(), packet.getEntryId());
+            });
         }
     }
 
@@ -327,7 +326,6 @@ public class DefaultProtocolMethodProcessorImpl implements ProtocolMethodProcess
                             connAck(MqttConnectReturnCode.CONNECTION_REFUSED_NOT_AUTHORIZED);
                     channel.writeAndFlush(connAck);
                     channel.close();
-                    return;
                 } else {
                     doSubscribe(channel, msg, clientID);
                 }
@@ -360,7 +358,7 @@ public class DefaultProtocolMethodProcessorImpl implements ProtocolMethodProcess
                                     outstandingPacketContainer, metricsCollector);
 //                            sub.addConsumer(consumer);
                             log.info("MqttVirtualTopics: Registering to common consumer");
-                            commonConsumer.add(subTopic.topicName(), consumer);
+                            commonConsumers.forEach(c -> c.add(subTopic.topicName(), consumer));
 //                            consumer.addAllPermits();
                             topicSubscriptions.putIfAbsent(sub.getTopic(), Pair.of(sub, consumer));
                         } catch (Exception e) {
@@ -418,7 +416,7 @@ public class DefaultProtocolMethodProcessorImpl implements ProtocolMethodProcess
                                     MQTTConsumer consumer = new MQTTConsumer(subscription, topicFilter,
                                         topic, clientID, serverCnx, qos, packetIdGenerator,
                                             outstandingPacketContainer, metricsCollector);
-                                    commonConsumer.remove(topicFilter, consumer);
+                                    commonConsumers.forEach(c -> c.remove(topicFilter, consumer));
                                     topicOp.get().getSubscription(clientID).removeConsumer(consumer);
                                     futures.add(topicOp.get().unsubscribe(clientID));
                                 } catch (Exception e) {

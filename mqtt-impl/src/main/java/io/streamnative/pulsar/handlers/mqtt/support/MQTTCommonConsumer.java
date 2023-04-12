@@ -77,7 +77,7 @@ public class MQTTCommonConsumer extends Consumer {
 
     @Override
     public Future<Void> sendMessages(List<Entry> entries, EntryBatchSizes batchSizes, EntryBatchIndexesAcks batchIndexesAcks, int totalMessages, long totalBytes, long totalChunkedMessages, RedeliveryTracker redeliveryTracker) {
-        log.debug("MqttVirtualTopics: Sending messages");
+        log.debug("[{}-{}] Sending messages", consumerName(), consumerId());
         List<Future> futures = new ArrayList<>();
 
         for (int i = 0; i < entries.size(); i++) {
@@ -85,7 +85,7 @@ public class MQTTCommonConsumer extends Consumer {
             int packetId = packetIdGenerator.nextPacketId();
             List<MqttPublishMessage> messages = PulsarMessageConverter.toMqttMessages(null, entry,
                     packetId, MqttQoS.AT_LEAST_ONCE);
-            log.debug("MqttVirtualTopics: Sending {} messages of entry {}.", messages.size(), entry.getEntryId());
+            log.debug("[{}-{}] Sending {} messages of entry {}.", consumerName(), consumerId(), messages.size(), entry.getEntryId());
 
             String virtualTopic = null;
             if (messages.size() > 0) {
@@ -93,14 +93,14 @@ public class MQTTCommonConsumer extends Consumer {
             }
 
             if (StringUtil.isNullOrEmpty(virtualTopic)) {
-                log.warn("Virtual topic name is empty for {} entry.", entry.getEntryId());
+                log.debug("[{}-{}] Virtual topic name is empty for {} entry.", consumerName(), consumerId(), entry.getEntryId());
                 continue;
             }
 
             List<MQTTConsumer> topicConsumers = consumers.get(virtualTopic);
 
             if (topicConsumers != null && topicConsumers.size() > 0) {
-                log.debug("MqttVirtualTopics: Sending message to {} consumer(s) for virtualTopic {}.",
+                log.debug("[{}-{}] Sending message to {} consumer(s) for virtualTopic {}.", consumerName(), consumerId(),
                         topicConsumers.size(), virtualTopic);
 
                 for (MqttPublishMessage message : messages) {
@@ -131,7 +131,7 @@ public class MQTTCommonConsumer extends Consumer {
                             // But we cannot allow one consumer to stop sending messages to all other consumers.
                             // A crash here does that.
                             // So have to catch it.
-                            log.error("Could not send the message to consumer {}-{}.", mqttConsumer.consumerName(),
+                            log.debug("[{}-{}] Could not send the message to consumer {}-{}.", consumerName(), consumerId(), mqttConsumer.consumerName(),
                                     mqttConsumer.consumerId(), e);
                         }
                     });

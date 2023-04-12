@@ -16,7 +16,7 @@ package io.streamnative.pulsar.handlers.mqtt;
 import static io.streamnative.pulsar.handlers.mqtt.Connection.ConnectionState.CONNECT_ACK;
 import static io.streamnative.pulsar.handlers.mqtt.Connection.ConnectionState.DISCONNECTED;
 import static io.streamnative.pulsar.handlers.mqtt.Connection.ConnectionState.ESTABLISHED;
-import static io.streamnative.pulsar.handlers.mqtt.MQTTInboundHandler.commonConsumer;
+import static io.streamnative.pulsar.handlers.mqtt.MQTTInboundHandler.commonConsumers;
 import static java.util.concurrent.atomic.AtomicReferenceFieldUpdater.newUpdater;
 import io.netty.channel.Channel;
 import io.netty.handler.codec.mqtt.MqttConnAckMessage;
@@ -103,7 +103,7 @@ public class Connection {
             // For producer doesn't bind subscriptions
             if (topicSubscriptions != null) {
                 topicSubscriptions.forEach((k, v) -> {
-                    commonConsumer.remove(k.getName(), (MQTTConsumer) v.getValue());
+                    commonConsumers.forEach(c -> c.remove(k.getName(), (MQTTConsumer) v.getValue()));
                     k.unsubscribe(NettyUtils.getClientId(channel));
                     v.getLeft().delete();
                 });
