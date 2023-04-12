@@ -13,13 +13,20 @@
  */
 package io.streamnative.pulsar.handlers.mqtt;
 
+import io.streamnative.pulsar.handlers.mqtt.support.MQTTCommonConsumer;
 import io.streamnative.pulsar.handlers.mqtt.support.MQTTMetricsCollector;
 import io.streamnative.pulsar.handlers.mqtt.support.MQTTMetricsProvider;
+import io.streamnative.pulsar.handlers.mqtt.support.MQTTStubCnx;
+import io.streamnative.pulsar.handlers.mqtt.utils.PulsarTopicUtils;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.pulsar.broker.PulsarService;
 import org.apache.pulsar.broker.authorization.AuthorizationService;
 import org.apache.pulsar.broker.service.BrokerService;
+import org.apache.pulsar.broker.service.Subscription;
+
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * Main class for mqtt service.
@@ -51,6 +58,9 @@ public class MQTTService {
     @Getter
     private final MQTTConnectionManager connectionManager;
 
+    @Getter
+    private final ConcurrentHashMap<String, MQTTCommonConsumer> commonConsumersMap;
+
     public MQTTService(BrokerService brokerService, MQTTServerConfiguration serverConfiguration) {
         this.brokerService = brokerService;
         this.pulsarService = brokerService.pulsar();
@@ -63,5 +73,34 @@ public class MQTTService {
             ? new MQTTAuthenticationService(brokerService.getAuthenticationService(),
                 serverConfiguration.getMqttAuthenticationMethods()) : null;
         this.connectionManager = new MQTTConnectionManager();
+        this.commonConsumersMap = new ConcurrentHashMap<>();
+    }
+
+    public synchronized CompletableFuture<MQTTCommonConsumer> getCommonConsumer(String virtualTopicName) {
+        CompletableFuture<MQTTCommonConsumer> future = new CompletableFuture<>();
+        String realTopicName = serverConfiguration.getSharder().getShardId(virtualTopicName);
+        //String topicName = "c8locals.LocalMqtt";
+        MQTTCommonConsumer consumer = commonConsumersMap.get(realTopicName);
+        if (consumer != null) {
+            future.complete(consumer);
+        } else {
+            Subscription sub = null;
+            try {
+                sub = PulsarTopicUtils
+                    .getOrCreateSubscription(pulsarService, realTopicName, "commonSub",
+                        serverConfiguration.getDefaultTenant(), serverConfiguration.getDefaultNamespace(),
+                        serverConfiguration.getDefaultTopicDomain()).get();
+            } catch (Exception e) {
+                future.completeExceptionally(e);
+            }
+            MQTTStubCnx cnx = new MQTTStubCnx(pulsarService);
+            MQTTCommonConsumer commonConsumer = new MQTTCommonConsumer(sub, sub.getTopicName(), "common", cnx);
+            sub.addConsumer(commonConsumer);
+            commonConsumer.flowPermits(1000);
+            log.info("MqttVirtualTopics: Common consumer initialized");
+            commonConsumersMap.put(realTopicName, commonConsumer);
+            future.complete(commonConsumer);
+        }
+        return future;
     }
 }

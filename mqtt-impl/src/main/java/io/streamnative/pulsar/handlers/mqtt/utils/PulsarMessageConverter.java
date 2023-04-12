@@ -70,7 +70,7 @@ public class PulsarMessageConverter {
             metadata.addProperty().setKey("virtualTopic").setValue(topicName);
         }
         MessageImpl<byte[]> pulsarMsg = MessageImpl.create(metadata, mqttMsg.payload().nioBuffer(), SCHEMA);
-        log.info("MqttVirtualTopics: Add pulsar topic property");
+        log.debug("MqttVirtualTopics: Add pulsar topic property virtualTopic = {}", topicName);
         return pulsarMsg;
     }
 

@@ -77,7 +77,6 @@ public class DefaultProtocolMethodProcessorImpl implements ProtocolMethodProcess
     private final PulsarService pulsarService;
     private final QosPublishHandlers qosPublishHandlers;
     private final MQTTServerConfiguration configuration;
-    private final MQTTCommonConsumer commonConsumer;
     private final MQTTServerCnx serverCnx;
     private final PacketIdGenerator packetIdGenerator;
     private final OutstandingPacketContainer outstandingPacketContainer;
@@ -85,11 +84,11 @@ public class DefaultProtocolMethodProcessorImpl implements ProtocolMethodProcess
     private final AuthorizationService authorizationService;
     private final MQTTMetricsCollector metricsCollector;
     private final MQTTConnectionManager connectionManager;
+    private final MQTTService mqttService;
 
-    public DefaultProtocolMethodProcessorImpl (MQTTService mqttService, ChannelHandlerContext ctx, MQTTCommonConsumer commonConsumer) {
+    public DefaultProtocolMethodProcessorImpl (MQTTService mqttService, ChannelHandlerContext ctx) {
         this.pulsarService = mqttService.getPulsarService();
         this.configuration = mqttService.getServerConfiguration();
-        this.commonConsumer = commonConsumer;
         this.qosPublishHandlers = new QosPublishHandlersImpl(pulsarService, configuration);
         this.packetIdGenerator = PacketIdGenerator.newNonZeroGenerator();
         this.outstandingPacketContainer = new OutstandingPacketContainerImpl();
@@ -98,6 +97,7 @@ public class DefaultProtocolMethodProcessorImpl implements ProtocolMethodProcess
         this.metricsCollector = mqttService.getMetricsCollector();
         this.connectionManager = mqttService.getConnectionManager();
         this.serverCnx = new MQTTServerCnx(pulsarService, ctx);
+        this.mqttService = mqttService;
     }
 
     @Override
@@ -194,7 +194,7 @@ public class DefaultProtocolMethodProcessorImpl implements ProtocolMethodProcess
         String userRole = NettyUtils.getUserRole(channel);
         // Authorization the client
         if (!configuration.isMqttAuthorizationEnabled()) {
-            log.info("[Publish] authorization is disabled, allowing client. CId={}, userRole={}", clientID, userRole);
+            log.debug("[Publish] authorization is disabled, allowing client. CId={}, userRole={}", clientID, userRole);
             doPublish(channel, msg);
         } else {
             this.authorizationService.canProduceAsync(TopicName.get(msg.variableHeader().topicName()),
@@ -340,36 +340,19 @@ public class DefaultProtocolMethodProcessorImpl implements ProtocolMethodProcess
         List<MqttTopicSubscription> subTopics = topicSubscriptions(msg);
 
         List<CompletableFuture<Void>> futureList = new ArrayList<>(subTopics.size());
-        Map<Topic, Pair<Subscription, Consumer>> topicSubscriptions = new ConcurrentHashMap<>();
+        Map<String, Pair<MQTTCommonConsumer, MQTTVirtualConsumer>> topicSubscriptions = new ConcurrentHashMap<>();
         for (MqttTopicSubscription subTopic : subTopics) {
-            metricsCollector.addSub(subTopic.topicName());
-            CompletableFuture<List<String>> topicListFuture = PulsarTopicUtils.asyncGetTopicListFromTopicSubscription(
-                    subTopic.topicName(), configuration.getDefaultTenant(), configuration.getDefaultNamespace(),
-                    pulsarService, configuration.getDefaultTopicDomain());
-            CompletableFuture<Void> completableFuture = topicListFuture.thenCompose(topics -> {
-                List<CompletableFuture<Void>> futures = new ArrayList<>();
-                for (String topic : topics) {
-                    CompletableFuture<Subscription> subFuture = PulsarTopicUtils
-                            .getOrCreateSubscription(pulsarService, topic, clientID,
-                                    configuration.getDefaultTenant(), configuration.getDefaultNamespace(),
-                                    configuration.getDefaultTopicDomain());
-                    CompletableFuture<Void> result = subFuture.thenAccept(sub -> {
-                        try {
-                            MQTTConsumer consumer = new MQTTConsumer(sub, subTopic.topicName(), topic,
-                                    clientID, serverCnx, subTopic.qualityOfService(), packetIdGenerator,
-                                    outstandingPacketContainer, metricsCollector);
-//                            sub.addConsumer(consumer);
-                            log.info("MqttVirtualTopics: Registering to common consumer");
-                            commonConsumer.add(subTopic.topicName(), consumer);
-//                            consumer.addAllPermits();
-                            topicSubscriptions.putIfAbsent(sub.getTopic(), Pair.of(sub, consumer));
-                        } catch (Exception e) {
-                            throw new MQTTServerException(e);
-                        }
-                    });
-                    futures.add(result);
+
+            CompletableFuture<Void> completableFuture = mqttService.getCommonConsumer(subTopic.topicName()).thenAccept(commonConsumer -> {
+                try {
+                    MQTTVirtualConsumer consumer = new MQTTVirtualConsumer(subTopic.topicName(), serverCnx,
+                        subTopic.qualityOfService(), packetIdGenerator, subTopic.topicName());
+                    log.info("MqttVirtualTopics: Registering to common consumer {}", subTopic.topicName());
+                    commonConsumer.add(subTopic.topicName(), consumer);
+                    topicSubscriptions.putIfAbsent(subTopic.topicName(), Pair.of(commonConsumer, consumer));
+                } catch (Exception e) {
+                    throw new MQTTServerException(e);
                 }
-                return FutureUtil.waitForAll(futures);
             });
             futureList.add(completableFuture);
         }
@@ -379,7 +362,7 @@ public class DefaultProtocolMethodProcessorImpl implements ProtocolMethodProcess
                 log.debug("Sending SUB-ACK message {} to {}", ackMessage, clientID);
             }
             channel.writeAndFlush(ackMessage);
-            Map<Topic, Pair<Subscription, Consumer>> existedSubscriptions = NettyUtils.getTopicSubscriptions(channel);
+            Map<String, Pair<MQTTCommonConsumer, MQTTVirtualConsumer>> existedSubscriptions = NettyUtils.getTopicSubscriptions(channel);
             if (existedSubscriptions != null) {
                 topicSubscriptions.putAll(existedSubscriptions);
             }
@@ -415,11 +398,11 @@ public class DefaultProtocolMethodProcessorImpl implements ProtocolMethodProcess
                             Subscription subscription = topicOp.get().getSubscription(clientID);
                             if (subscription != null) {
                                 try {
-                                    MQTTConsumer consumer = new MQTTConsumer(subscription, topicFilter,
-                                        topic, clientID, serverCnx, qos, packetIdGenerator,
-                                            outstandingPacketContainer, metricsCollector);
-                                    commonConsumer.remove(topicFilter, consumer);
-                                    topicOp.get().getSubscription(clientID).removeConsumer(consumer);
+                                    MQTTVirtualConsumer consumer = new MQTTVirtualConsumer(topicFilter, serverCnx,
+                                        qos, packetIdGenerator, topic);
+
+                                    mqttService.getCommonConsumer(topic).get().remove(topicFilter, consumer);
+                                    //topicOp.get().getSubscription(clientID).removeConsumer(consumer);
                                     futures.add(topicOp.get().unsubscribe(clientID));
                                 } catch (Exception e) {
                                     throw new MQTTServerException(e);

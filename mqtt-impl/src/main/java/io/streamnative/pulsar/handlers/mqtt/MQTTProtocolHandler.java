@@ -80,6 +80,7 @@ public class MQTTProtocolHandler implements ProtocolHandler {
             // when loaded with PulsarService as NAR, `conf` will be type of ServiceConfiguration
             mqttConfig = ConfigurationUtils.create(conf.getProperties(), MQTTServerConfiguration.class);
         }
+        mqttConfig.setSharder(initSharder(mqttConfig.getMqttRealTopicNamePrefix(), mqttConfig.getMqttRealTopicCount()));
         this.bindAddress = ServiceConfigurationUtils.getDefaultOrConfiguredAddress(mqttConfig.getBindAddress());
     }
 
@@ -141,7 +142,7 @@ public class MQTTProtocolHandler implements ProtocolHandler {
 
             proxyConfig.setMqttRealTopicCount(mqttConfig.getMqttRealTopicCount());
             proxyConfig.setMqttRealTopicNamePrefix(mqttConfig.getMqttRealTopicNamePrefix());
-            proxyConfig.setSharder(initSharder(proxyConfig.getMqttRealTopicNamePrefix(), proxyConfig.getMqttRealTopicCount()));
+            proxyConfig.setSharder(mqttConfig.getSharder());
             log.info("proxyConfig broker service URL: {}", proxyConfig.getBrokerServiceURL());
             proxyService = new MQTTProxyService(mqttService, proxyConfig);
             try {
