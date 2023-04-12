@@ -175,12 +175,12 @@ public class DefaultProtocolMethodProcessorImpl implements ProtocolMethodProcess
         }
         int packetId = msg.variableHeader().messageId();
         OutstandingPacket packet = outstandingPacketContainer.remove(packetId);
+        if (log.isDebugEnabled()) {
+            log.debug("[PubAck] [{}] Outstanding Packet found: {}.", NettyUtils.getClientId(channel), packet != null);
+        }
         if (packet != null) {
-            packet.getConsumer().getSubscription().acknowledgeMessage(
-                    Collections.singletonList(PositionImpl.get(packet.getLedgerId(), packet.getEntryId())),
-                    CommandAck.AckType.Individual, Collections.emptyMap());
-            packet.getConsumer().getPendingAcks().remove(packet.getLedgerId(), packet.getEntryId());
-            packet.getConsumer().incrementPermits();
+            commonConsumer.acknowledgeMessage(packet.getLedgerId(), packet.getEntryId());
+            commonConsumer.getPendingAcks().remove(packet.getLedgerId(), packet.getEntryId());
         }
     }
 

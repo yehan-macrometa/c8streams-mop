@@ -26,8 +26,11 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Objects;
 import java.util.concurrent.atomic.AtomicIntegerFieldUpdater;
+
+import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.bookkeeper.mledger.Entry;
+import org.apache.bookkeeper.mledger.impl.PositionImpl;
 import org.apache.pulsar.broker.service.Consumer;
 import org.apache.pulsar.broker.service.EntryBatchIndexesAcks;
 import org.apache.pulsar.broker.service.EntryBatchSizes;
@@ -46,6 +49,7 @@ public class MQTTConsumer extends Consumer {
     private final String pulsarTopicName;
     private final String mqttTopicName;
     private final MQTTServerCnx cnx;
+    @Getter
     private final MqttQoS qos;
     private final PacketIdGenerator packetIdGenerator;
     private final OutstandingPacketContainer outstandingPacketContainer;
@@ -111,19 +115,14 @@ public class MQTTConsumer extends Consumer {
         return promise;
     }
 
-    public ChannelPromise sendMessage(Entry entry, MqttPublishMessage msg) {
+    public ChannelPromise sendMessage(Entry entry, MqttPublishMessage msg, int packetId) {
         ChannelPromise promise = cnx.ctx().newPromise();
         MESSAGE_PERMITS_UPDATER.addAndGet(this, -1);
 
-        int packetId = 0;
         if (MqttQoS.AT_MOST_ONCE != qos) {
-            packetId = packetIdGenerator.nextPacketId();
             outstandingPacketContainer.add(new OutstandingPacket(this, packetId, entry.getLedgerId(),
                     entry.getEntryId()));
         }
-        String toConsumerTopicName = PulsarTopicUtils.getToConsumerTopicName(mqttTopicName, pulsarTopicName);
-//        List<MqttPublishMessage> messages = PulsarMessageConverter.toMqttMessages(toConsumerTopicName, entry,
-//                packetId, qos);
 
         if (log.isDebugEnabled()) {
             log.debug("[{}] [{}] [{}] Send MQTT message {} to subscriber", pulsarTopicName,

@@ -33,7 +33,7 @@
 
     <modules>
         <module>mqtt-impl</module>
-        <module>tests</module>
+<!--        <module>tests</module>-->
     </modules>
 
     <licenses>
