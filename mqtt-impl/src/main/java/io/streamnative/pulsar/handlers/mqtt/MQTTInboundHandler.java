@@ -39,6 +39,7 @@ import org.apache.commons.lang3.tuple.Pair;
 import org.apache.pulsar.broker.PulsarService;
 import org.apache.pulsar.broker.service.Subscription;
 
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ExecutionException;
 
@@ -134,8 +135,8 @@ public class MQTTInboundHandler extends ChannelInboundHandlerAdapter {
                 ctx.channel(),
                 NettyUtils.getClientId(ctx.channel()),
                 cause);
-        Map<String, Pair<MQTTCommonConsumer, MQTTVirtualConsumer>> topicCommonConsumer = NettyUtils.getTopicSubscriptions(ctx.channel());
-        topicCommonConsumer.forEach((k, v) -> v.getKey().remove(k, v.getValue()));
+        Map<String, List<Pair<MQTTCommonConsumer, MQTTVirtualConsumer>>> topicCommonConsumer = NettyUtils.getTopicSubscriptions(ctx.channel());
+        topicCommonConsumer.forEach((k, v) -> v.forEach(p -> p.getKey().remove(k, p.getValue())));
         ctx.close();
     }
 

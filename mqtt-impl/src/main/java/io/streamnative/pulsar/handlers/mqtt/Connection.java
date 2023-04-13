@@ -24,6 +24,8 @@ import io.streamnative.pulsar.handlers.mqtt.support.MQTTCommonConsumer;
 import io.streamnative.pulsar.handlers.mqtt.support.MQTTVirtualConsumer;
 import io.streamnative.pulsar.handlers.mqtt.utils.MqttMessageUtils;
 import io.streamnative.pulsar.handlers.mqtt.utils.NettyUtils;
+
+import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.atomic.AtomicReferenceFieldUpdater;
@@ -78,15 +80,15 @@ public class Connection {
     }
 
     public void removeConsumers() {
-        Map<String, Pair<MQTTCommonConsumer, MQTTVirtualConsumer>> topicSubscriptions = NettyUtils
+        Map<String, List<Pair<MQTTCommonConsumer, MQTTVirtualConsumer>>> topicSubscriptions = NettyUtils
                 .getTopicSubscriptions(channel);
         // For producer doesn't bind subscriptions
         if (topicSubscriptions != null) {
             topicSubscriptions.forEach((k, v) -> {
                 try {
-                    v.getKey().remove(k, v.getValue());
+                    v.forEach(p -> p.getKey().remove(k, p.getValue()));
                 } catch (Exception ex) {
-                    log.warn("Topic [{}] remove consumer {} error", k, v.getRight(), ex);
+                    log.warn("Topic [{}] remove consumer error", k, ex);
                 }
             });
         }

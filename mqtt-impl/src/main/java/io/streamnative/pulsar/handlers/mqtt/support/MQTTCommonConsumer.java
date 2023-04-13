@@ -21,6 +21,7 @@ import io.netty.util.concurrent.SucceededFuture;
 import io.netty.util.internal.StringUtil;
 import io.streamnative.pulsar.handlers.mqtt.PacketIdGenerator;
 import io.streamnative.pulsar.handlers.mqtt.utils.PulsarMessageConverter;
+import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.bookkeeper.mledger.Entry;
 import org.apache.pulsar.broker.service.Consumer;
@@ -29,18 +30,14 @@ import org.apache.pulsar.broker.service.EntryBatchSizes;
 import org.apache.pulsar.broker.service.RedeliveryTracker;
 import org.apache.pulsar.broker.service.Subscription;
 import org.apache.pulsar.client.api.MessageId;
-import org.apache.pulsar.client.impl.MessageImpl;
 import org.apache.pulsar.common.api.proto.CommandAck;
 import org.apache.pulsar.common.api.proto.CommandSubscribe;
 
-import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
 
 /**
  * MQTT consumer.
@@ -49,10 +46,13 @@ import java.util.concurrent.Executors;
 public class MQTTCommonConsumer extends Consumer {
     private Map<String, List<MQTTVirtualConsumer>> consumers = new ConcurrentHashMap<>();
     private PacketIdGenerator packetIdGenerator = PacketIdGenerator.newNonZeroGenerator();
+    @Getter
+    private int index;
 
-    public MQTTCommonConsumer(Subscription subscription, String pulsarTopicName, String consumerName, MQTTStubCnx cnx) {
-        super(subscription, CommandSubscribe.SubType.Shared, pulsarTopicName, 0, 0, consumerName, 0, cnx,
+    public MQTTCommonConsumer(Subscription subscription, String pulsarTopicName, String consumerName, MQTTStubCnx cnx, int index) {
+        super(subscription, CommandSubscribe.SubType.Shared, pulsarTopicName, index, 0, consumerName, 0, cnx,
                 "", null, false, CommandSubscribe.InitialPosition.Latest, null, MessageId.latest);
+        this.index = index;
     }
 
     @Override
@@ -105,13 +105,15 @@ public class MQTTCommonConsumer extends Consumer {
 
     public void add(String mqttTopicName, MQTTVirtualConsumer consumer) {
         consumers.computeIfAbsent(mqttTopicName, s -> new CopyOnWriteArrayList<>()).add(consumer);
+        log.debug("Add virtual consumer to common #{} for topic {}. left consumers = {}",
+            index, mqttTopicName, consumers.get(mqttTopicName).size());
     }
 
     public void remove(String mqttTopicName, MQTTVirtualConsumer consumer) {
         if (consumers.containsKey(mqttTopicName)) {
             boolean result = consumers.get(mqttTopicName).remove(consumer);
-            log.debug("Try remove({}) virtual consumer for topic {}. left consumers = {}",
-                result, mqttTopicName, consumers.get(mqttTopicName).size());
+            log.debug("Try remove({}) virtual consumer from common #{} for topic {}. left consumers = {}",
+                result, index, mqttTopicName, consumers.get(mqttTopicName).size());
         }
     }
 }
