@@ -130,7 +130,7 @@ public class MQTTInboundHandler extends ChannelInboundHandlerAdapter {
                             .getOrCreateSubscription(pulsarService, topicName, "commonSub",
                                     configuration.getDefaultTenant(), configuration.getDefaultNamespace(),
                                     configuration.getDefaultTopicDomain()).get();
-                    for (int i = 0; i < 2; i++) {
+                    for (int i = 0; i < 1; i++) {
                         MQTTCommonConsumer consumer = new MQTTCommonConsumer(commonSub, topicName, "common-" + i, new MQTTServerCnx(pulsarService, ctx), packetIdGenerator);
                         commonConsumers.add(consumer);
                         commonSub.addConsumer(consumer);

@@ -176,10 +176,8 @@ public class DefaultProtocolMethodProcessorImpl implements ProtocolMethodProcess
             log.debug("[PubAck] [{}] Outstanding Packet found: {}.", NettyUtils.getClientId(channel), packet != null);
         }
         if (packet != null) {
-            commonConsumers.forEach(c -> {
-                c.acknowledgeMessage(packet.getLedgerId(), packet.getEntryId());
-                c.getPendingAcks().remove(packet.getLedgerId(), packet.getEntryId());
-            });
+            commonConsumers.forEach(c ->
+                c.acknowledgeMessage(packet.getLedgerId(), packet.getEntryId()));
         }
     }
 
