@@ -177,9 +177,13 @@ public class DefaultProtocolMethodProcessorImpl implements ProtocolMethodProcess
             log.debug("[PubAck] [{}] Outstanding Packet found: {}.", NettyUtils.getClientId(channel), packet != null);
         }
         if (packet != null && packet.getConsumer() != null) {
-            mqttService.getCommonConsumers(
-                    mqttService.getServerConfiguration().getSharder().getShardId(packet.getConsumer().getTopicName())
-            ).thenAccept(commonConsumers -> {
+            if (log.isDebugEnabled()) {
+                log.debug("[PubAck] [{}] For : {}.", NettyUtils.getClientId(channel), packet.getConsumer().getTopicName());
+            }
+            mqttService.getCommonConsumers(packet.getConsumer().getTopicName()).thenAccept(commonConsumers -> {
+                if (log.isDebugEnabled()) {
+                    log.debug("[PubAck] [{}] Acknowledging: {}.", NettyUtils.getClientId(channel), commonConsumers);
+                }
                 commonConsumers.forEach(c ->
                         c.acknowledgeMessage(packet.getLedgerId(), packet.getEntryId()));
             });

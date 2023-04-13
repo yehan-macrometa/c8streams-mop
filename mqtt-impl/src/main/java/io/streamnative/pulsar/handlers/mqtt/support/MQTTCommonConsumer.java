@@ -54,7 +54,7 @@ public class MQTTCommonConsumer extends Consumer {
     private int index;
 
     public MQTTCommonConsumer(Subscription subscription, String pulsarTopicName, String consumerName, MQTTStubCnx cnx, int index) {
-        super(subscription, CommandSubscribe.SubType.Shared, pulsarTopicName, index, 0, consumerName, 0, cnx,
+        super(subscription, CommandSubscribe.SubType.Exclusive, pulsarTopicName, index, 0, consumerName, 0, cnx,
                 "", null, false, CommandSubscribe.InitialPosition.Latest, null, MessageId.latest);
         this.index = index;
 
@@ -63,7 +63,7 @@ public class MQTTCommonConsumer extends Consumer {
             while (true) {
                 log.info("[{}-{}] Redelivering unacked messages.", consumerName, consumerId());
                 try {
-                    redeliverUnacknowledgedMessages();
+                    subscription.getDispatcher().redeliverUnacknowledgedMessages(this);
                 } catch (Exception e) {
                     e.printStackTrace();
                 }
@@ -111,7 +111,6 @@ public class MQTTCommonConsumer extends Consumer {
                             mqttConsumer.getCnx().ctx().channel().eventLoop().execute(() -> {
                                 try {
                                     mqttConsumer.sendMessage(entry, message, packetId);
-
                                 } catch (Exception e) {
                                     // TODO: We need to fix each issue possible.
                                     // But we cannot allow one consumer to stop sending messages to all other consumers.
@@ -164,29 +163,30 @@ public class MQTTCommonConsumer extends Consumer {
     }
 
     private void addToPendingAcks(EntryBatchSizes batchSizes, Entry entry, int entryIndex) {
-        ConcurrentLongLongPairHashMap pendingAcks = getPendingAcks();
-        Subscription subscription = getSubscription();
-        if (pendingAcks != null) {
-            int batchSize = batchSizes.getBatchSize(entryIndex);
-            pendingAcks.put(entry.getLedgerId(), entry.getEntryId(), batchSize, 1);
-            if (log.isDebugEnabled()){
-                log.debug("[{}-{}] Added {}:{} ledger entry with batchSize of {} to pendingAcks in"
-                                + " broker.service.Consumer",
-                        subscription.getTopicName(), subscription, entry.getLedgerId(), entry.getEntryId(), batchSize);
-            }
-        }
+//        ConcurrentLongLongPairHashMap pendingAcks = getPendingAcks();
+//        Subscription subscription = getSubscription();
+//        if (pendingAcks != null) {
+//            int batchSize = batchSizes.getBatchSize(entryIndex);
+//            pendingAcks.put(entry.getLedgerId(), entry.getEntryId(), batchSize, 1);
+//            if (log.isDebugEnabled()){
+//                log.debug("[{}-{}] Added {}:{} ledger entry with batchSize of {} to pendingAcks in"
+//                                + " broker.service.Consumer",
+//                        subscription.getTopicName(), subscription, entry.getLedgerId(), entry.getEntryId(), batchSize);
+//            }
+//        }
     }
 
     public void acknowledgeMessage(long ledgerId, long entryId) {
         try {
             ack(ledgerId, entryId);
-            getPendingAcks().remove(ledgerId, entryId);
+//            getPendingAcks().remove(ledgerId, entryId);
         } catch (Exception e) {
             log.warn("Could not acknowledge message. {}", e.getMessage());
         }
     }
 
     private void ack(long ledgerId, long entryId) {
+        log.debug("Acknowledging message Ledger={} Entry={}", ledgerId, entryId);
         getSubscription().acknowledgeMessage(
                 Collections.singletonList(PositionImpl.get(ledgerId, entryId)),
                 CommandAck.AckType.Individual, Collections.emptyMap());
