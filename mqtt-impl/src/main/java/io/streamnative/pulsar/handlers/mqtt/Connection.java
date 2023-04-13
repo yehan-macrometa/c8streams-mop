@@ -16,24 +16,22 @@ package io.streamnative.pulsar.handlers.mqtt;
 import static io.streamnative.pulsar.handlers.mqtt.Connection.ConnectionState.CONNECT_ACK;
 import static io.streamnative.pulsar.handlers.mqtt.Connection.ConnectionState.DISCONNECTED;
 import static io.streamnative.pulsar.handlers.mqtt.Connection.ConnectionState.ESTABLISHED;
-import static io.streamnative.pulsar.handlers.mqtt.MQTTInboundHandler.commonConsumers;
 import static java.util.concurrent.atomic.AtomicReferenceFieldUpdater.newUpdater;
 import io.netty.channel.Channel;
 import io.netty.handler.codec.mqtt.MqttConnAckMessage;
 import io.netty.handler.codec.mqtt.MqttConnectReturnCode;
-import io.streamnative.pulsar.handlers.mqtt.support.MQTTConsumer;
+import io.streamnative.pulsar.handlers.mqtt.support.MQTTCommonConsumer;
+import io.streamnative.pulsar.handlers.mqtt.support.MQTTVirtualConsumer;
 import io.streamnative.pulsar.handlers.mqtt.utils.MqttMessageUtils;
 import io.streamnative.pulsar.handlers.mqtt.utils.NettyUtils;
+
+import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.atomic.AtomicReferenceFieldUpdater;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.tuple.Pair;
-import org.apache.pulsar.broker.service.BrokerServiceException;
-import org.apache.pulsar.broker.service.Consumer;
-import org.apache.pulsar.broker.service.Subscription;
-import org.apache.pulsar.broker.service.Topic;
 
 /**
  * Value object to maintain the information of single connection, like ClientID, Channel, and clean
@@ -81,15 +79,15 @@ public class Connection {
     }
 
     public void removeConsumers() {
-        Map<Topic, Pair<Subscription, Consumer>> topicSubscriptions = NettyUtils
+        Map<String, List<Pair<MQTTCommonConsumer, MQTTVirtualConsumer>>> topicSubscriptions = NettyUtils
                 .getTopicSubscriptions(channel);
         // For producer doesn't bind subscriptions
         if (topicSubscriptions != null) {
             topicSubscriptions.forEach((k, v) -> {
                 try {
-                    v.getLeft().removeConsumer(v.getRight());
-                } catch (BrokerServiceException ex) {
-                    log.warn("subscription [{}] remove consumer {} error", v.getLeft(), v.getRight(), ex);
+                    v.forEach(p -> p.getKey().remove(k, p.getValue()));
+                } catch (Exception ex) {
+                    log.warn("Topic [{}] remove consumer error", k, ex);
                 }
             });
         }
@@ -98,14 +96,14 @@ public class Connection {
     public void removeSubscriptions() {
         removeConsumers();
         if (cleanSession) {
-            Map<Topic, Pair<Subscription, Consumer>> topicSubscriptions = NettyUtils
+            Map<String, List<Pair<MQTTCommonConsumer, MQTTVirtualConsumer>>> topicSubscriptions = NettyUtils
                     .getTopicSubscriptions(channel);
             // For producer doesn't bind subscriptions
             if (topicSubscriptions != null) {
-                topicSubscriptions.forEach((k, v) -> {
-                    commonConsumers.forEach(c -> c.remove(k.getName(), (MQTTConsumer) v.getValue()));
-                    k.unsubscribe(NettyUtils.getClientId(channel));
-                    v.getLeft().delete();
+                topicSubscriptions.forEach((topic, consumerPairs) -> {
+                    consumerPairs.forEach(pair -> {
+                        pair.getLeft().remove(topic, pair.getRight());
+                    });
                 });
             }
         }

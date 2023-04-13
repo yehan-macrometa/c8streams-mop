@@ -30,4 +30,10 @@ public class MQTTServerConfiguration extends MQTTCommonConfiguration {
             doc = "Listener for the MQTT Server."
     )
     private String mqttListeners = "mqtt://127.0.0.1:1883";
+
+    @FieldContext(
+        category = CATEGORY_MQTT,
+        doc = "Set number of subscribers for one real topic. Should be `1` or more."
+    )
+    private int mqttRealTopicSubscribersCount = 1;
 }

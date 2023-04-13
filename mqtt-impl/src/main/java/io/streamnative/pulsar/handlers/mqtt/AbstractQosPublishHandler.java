@@ -43,8 +43,11 @@ public abstract class AbstractQosPublishHandler implements QosPublishHandler {
     }
 
     protected CompletableFuture<Optional<Topic>> getTopicReference(MqttPublishMessage msg) {
-        log.info("MqttVirtualTopics: Returning common topic");
-        return PulsarTopicUtils.getTopicReference(pulsarService, "c8locals.LocalMqtt",
+        log.debug("MqttVirtualTopics: Returning common topic");
+        String virtualTopicName = msg.variableHeader().topicName();
+        String realTopicName = configuration.getSharder().getShardId(virtualTopicName);
+        log.debug("[publish] to real topic {}", realTopicName);
+        return PulsarTopicUtils.getTopicReference(pulsarService, realTopicName,
                 configuration.getDefaultTenant(), configuration.getDefaultNamespace(), true
                 , configuration.getDefaultTopicDomain());
     }

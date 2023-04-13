@@ -29,17 +29,15 @@ import io.netty.handler.timeout.IdleState;
 import io.netty.handler.timeout.IdleStateEvent;
 import io.streamnative.pulsar.handlers.mqtt.support.DefaultProtocolMethodProcessorImpl;
 import io.streamnative.pulsar.handlers.mqtt.support.MQTTCommonConsumer;
-import io.streamnative.pulsar.handlers.mqtt.support.MQTTServerCnx;
+import io.streamnative.pulsar.handlers.mqtt.support.MQTTVirtualConsumer;
 import io.streamnative.pulsar.handlers.mqtt.utils.NettyUtils;
-import io.streamnative.pulsar.handlers.mqtt.utils.PulsarTopicUtils;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
-import org.apache.pulsar.broker.PulsarService;
-import org.apache.pulsar.broker.service.Subscription;
+import org.apache.commons.lang3.tuple.Pair;
 
 import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
-import java.util.concurrent.ExecutionException;
+import java.util.Map;
 
 /**
  * MQTT in bound handler.
@@ -47,7 +45,6 @@ import java.util.concurrent.ExecutionException;
 @Sharable
 @Slf4j
 public class MQTTInboundHandler extends ChannelInboundHandlerAdapter {
-    private PacketIdGenerator packetIdGenerator = PacketIdGenerator.newNonZeroGenerator();
     static List<MQTTCommonConsumer> commonConsumers = new CopyOnWriteArrayList<>();
 
     private ProtocolMethodProcessor processor;
@@ -118,34 +115,7 @@ public class MQTTInboundHandler extends ChannelInboundHandlerAdapter {
     @Override
     public void channelActive(ChannelHandlerContext ctx) throws Exception {
         super.channelActive(ctx);
-
-        synchronized (MQTTInboundHandler.class) {
-            if (commonConsumers.size() == 0) {
-                log.info("MqttVirtualTopics: Initializing common consumer");
-                PulsarService pulsarService = mqttService.getPulsarService();
-                MQTTServerConfiguration configuration = mqttService.getServerConfiguration();
-                try {
-                    String topicName = "c8locals.LocalMqtt";
-                    Subscription commonSub = PulsarTopicUtils
-                            .getOrCreateSubscription(pulsarService, topicName, "commonSub",
-                                    configuration.getDefaultTenant(), configuration.getDefaultNamespace(),
-                                    configuration.getDefaultTopicDomain()).get();
-                    for (int i = 0; i < 1; i++) {
-                        MQTTCommonConsumer consumer = new MQTTCommonConsumer(commonSub, topicName, "common-" + i, new MQTTServerCnx(pulsarService, ctx), packetIdGenerator);
-                        commonConsumers.add(consumer);
-                        commonSub.addConsumer(consumer);
-                        consumer.flowPermits(1000);
-                    }
-                    log.info("MqttVirtualTopics: Common consumer initialized");
-                } catch (InterruptedException | ExecutionException e) {
-                    throw new RuntimeException(e);
-                }
-            } else {
-                log.info("MqttVirtualTopics: Reusing common consumer");
-            }
-        }
-
-        processor = new DefaultProtocolMethodProcessorImpl(mqttService, ctx, commonConsumers);
+        processor = new DefaultProtocolMethodProcessorImpl(mqttService, ctx);
     }
 
     @Override
@@ -161,6 +131,8 @@ public class MQTTInboundHandler extends ChannelInboundHandlerAdapter {
                 ctx.channel(),
                 NettyUtils.getClientId(ctx.channel()),
                 cause);
+        Map<String, List<Pair<MQTTCommonConsumer, MQTTVirtualConsumer>>> topicCommonConsumer = NettyUtils.getTopicSubscriptions(ctx.channel());
+        topicCommonConsumer.forEach((k, v) -> v.forEach(p -> p.getKey().remove(k, p.getValue())));
         ctx.close();
     }
 
