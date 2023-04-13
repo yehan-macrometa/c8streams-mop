@@ -78,6 +78,8 @@ public class MQTTCommonConsumer extends Consumer {
 
     @Override
     public Future<Void> sendMessages(List<Entry> entries, EntryBatchSizes batchSizes, EntryBatchIndexesAcks batchIndexesAcks, int totalMessages, long totalBytes, long totalChunkedMessages, RedeliveryTracker redeliveryTracker) {
+        long startTime = System.nanoTime();
+
         log.debug("[{}-{}] Sending messages of {} entries", consumerName(), consumerId(), entries.size());
 
         for (int i = 0; i < entries.size(); i++) {
@@ -106,31 +108,30 @@ public class MQTTCommonConsumer extends Consumer {
                     int finalI = i;
                     topicConsumers.forEach(mqttConsumer -> {
                         try {
-                            mqttConsumer.sendMessage(entry, message, packetId);
+                            mqttConsumer.getCnx().ctx().channel().eventLoop().execute(() -> {
+                                try {
+                                    mqttConsumer.sendMessage(entry, message, packetId);
 
-                            Subscription subscription = getSubscription();
-                            if (mqttConsumer.getQos() == MqttQoS.AT_MOST_ONCE) {
-                                subscription.acknowledgeMessage(
-                                        Collections.singletonList(PositionImpl.get(entry.getLedgerId(), entry.getEntryId())),
-                                        CommandAck.AckType.Individual, Collections.emptyMap());
-                            } else {
-                                ConcurrentLongLongPairHashMap pendingAcks = getPendingAcks();
-                                if (pendingAcks != null) {
-                                    int batchSize = batchSizes.getBatchSize(finalI);
-                                    pendingAcks.put(entry.getLedgerId(), entry.getEntryId(), batchSize, 1);
-                                    if (log.isDebugEnabled()){
-                                        log.debug("[{}-{}] Added {}:{} ledger entry with batchSize of {} to pendingAcks in"
-                                                        + " broker.service.Consumer",
-                                                subscription.getTopicName(), subscription, entry.getLedgerId(), entry.getEntryId(), batchSize);
-                                    }
+                                } catch (Exception e) {
+                                    // TODO: We need to fix each issue possible.
+                                    // But we cannot allow one consumer to stop sending messages to all other consumers.
+                                    // A crash here does that.
+                                    // So have to catch it.
+                                    log.debug("[{}-{}] Could not send the message to consumer {}.", consumerName(), consumerId(), mqttConsumer.getConsumerName(), e);
                                 }
-                            }
+
+                                try {
+                                    if (mqttConsumer.getQos() == MqttQoS.AT_MOST_ONCE) {
+                                        ack(entry.getLedgerId(), entry.getEntryId());
+                                    } else {
+                                        addToPendingAcks(batchSizes, entry, finalI);
+                                    }
+                                } catch (Exception e) {
+                                    log.error("Error when handling acknowledgement.", e);
+                                }
+                            });
                         } catch (Exception e) {
-                            // TODO: We need to fix each issue possible.
-                            // But we cannot allow one consumer to stop sending messages to all other consumers.
-                            // A crash here does that.
-                            // So have to catch it.
-                            log.debug("[{}-{}] Could not send the message to consumer {}.", consumerName(), consumerId(), mqttConsumer.getConsumerName(), e);
+                            log.error("Error when accessing channel executor.", e);
                         }
                     });
                 }
@@ -138,19 +139,11 @@ public class MQTTCommonConsumer extends Consumer {
                 log.debug("MqttVirtualTopics: No consumers for virtualTopic {}.", virtualTopic);
 
                 // TODO: Introduce DeadLetterTopic functionality
-                ConcurrentLongLongPairHashMap pendingAcks = getPendingAcks();
-                Subscription subscription = getSubscription();
-                if (pendingAcks != null) {
-                    int batchSize = batchSizes.getBatchSize(i);
-                    pendingAcks.put(entry.getLedgerId(), entry.getEntryId(), batchSize, 1);
-                    if (log.isDebugEnabled()){
-                        log.debug("[{}-{}] Added {}:{} ledger entry with batchSize of {} to pendingAcks in"
-                                        + " broker.service.Consumer",
-                                subscription.getTopicName(), subscription, entry.getLedgerId(), entry.getEntryId(), batchSize);
-                    }
-                }
+                addToPendingAcks(batchSizes, entry, i);
             }
         }
+
+        log.debug("Time spent sending: {}ns", System.nanoTime() - startTime);
 
         // TODO: VirtualMqttTopic: Figure out what to send
         return new SucceededFuture<>(ImmediateEventExecutor.INSTANCE, null);
@@ -170,14 +163,32 @@ public class MQTTCommonConsumer extends Consumer {
         }
     }
 
+    private void addToPendingAcks(EntryBatchSizes batchSizes, Entry entry, int entryIndex) {
+        ConcurrentLongLongPairHashMap pendingAcks = getPendingAcks();
+        Subscription subscription = getSubscription();
+        if (pendingAcks != null) {
+            int batchSize = batchSizes.getBatchSize(entryIndex);
+            pendingAcks.put(entry.getLedgerId(), entry.getEntryId(), batchSize, 1);
+            if (log.isDebugEnabled()){
+                log.debug("[{}-{}] Added {}:{} ledger entry with batchSize of {} to pendingAcks in"
+                                + " broker.service.Consumer",
+                        subscription.getTopicName(), subscription, entry.getLedgerId(), entry.getEntryId(), batchSize);
+            }
+        }
+    }
+
     public void acknowledgeMessage(long ledgerId, long entryId) {
         try {
-            getSubscription().acknowledgeMessage(
-                    Collections.singletonList(PositionImpl.get(ledgerId, entryId)),
-                    CommandAck.AckType.Individual, Collections.emptyMap());
+            ack(ledgerId, entryId);
             getPendingAcks().remove(ledgerId, entryId);
         } catch (Exception e) {
             log.warn("Could not acknowledge message. {}", e.getMessage());
         }
+    }
+
+    private void ack(long ledgerId, long entryId) {
+        getSubscription().acknowledgeMessage(
+                Collections.singletonList(PositionImpl.get(ledgerId, entryId)),
+                CommandAck.AckType.Individual, Collections.emptyMap());
     }
 }

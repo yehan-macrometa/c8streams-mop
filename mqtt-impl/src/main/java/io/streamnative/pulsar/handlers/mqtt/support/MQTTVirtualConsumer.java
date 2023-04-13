@@ -21,6 +21,7 @@ public class MQTTVirtualConsumer {
 
     @Getter
     private final String topicName;
+    @Getter
     private final MQTTServerCnx cnx;
     @Getter
     private final MqttQoS qos;
