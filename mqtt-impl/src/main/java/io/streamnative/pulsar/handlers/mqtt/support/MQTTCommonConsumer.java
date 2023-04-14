@@ -31,6 +31,7 @@ import org.apache.pulsar.client.api.PulsarClientException;
 import org.apache.pulsar.client.api.SubscriptionInitialPosition;
 import org.apache.pulsar.common.api.proto.CommandAck;
 
+import java.nio.charset.StandardCharsets;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
@@ -126,6 +127,8 @@ public class MQTTCommonConsumer {
                             // new message in that attached list and skip calling the sendMessage. Whenever this Promise
                             // completes, we can resubmit these messages via this.sendMessage method or
                             // orderedSendExecutor.executeOrdered method.
+                            log.info("[test] Common consumer = " + consumer.getTopic() + ", message " +
+                                (message.payload() != null ? message.payload().toString(StandardCharsets.UTF_8) : "<empty>"));
                             mqttConsumer.sendMessage(message, packetId, msg.getMessageId());
                         } catch (Exception e) {
                             // TODO: We need to fix each issue possible.
@@ -152,14 +155,14 @@ public class MQTTCommonConsumer {
 
     public void add(String mqttTopicName, MQTTVirtualConsumer consumer) {
         consumers.computeIfAbsent(mqttTopicName, s -> new CopyOnWriteArrayList<>()).add(consumer);
-        log.debug("Add virtual consumer to common #{} for topic {}. left consumers = {}",
+        log.info("Add virtual consumer to common #{} for topic {}. left consumers = {}",
             index, mqttTopicName, consumers.get(mqttTopicName).size());
     }
 
     public void remove(String mqttTopicName, MQTTVirtualConsumer consumer) {
         if (consumers.containsKey(mqttTopicName)) {
             boolean result = consumers.get(mqttTopicName).remove(consumer);
-            log.debug("Try remove({}) virtual consumer from common #{} for topic {}. left consumers = {}",
+            log.info("Try remove({}) virtual consumer from common #{} for topic {}. left consumers = {}",
                 result, index, mqttTopicName, consumers.get(mqttTopicName).size());
         }
     }

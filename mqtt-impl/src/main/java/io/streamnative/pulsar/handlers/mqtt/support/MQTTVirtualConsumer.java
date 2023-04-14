@@ -12,12 +12,14 @@ import io.streamnative.pulsar.handlers.mqtt.OutstandingVirtualPacket;
 import io.streamnative.pulsar.handlers.mqtt.OutstandingVirtualPacketContainer;
 import io.streamnative.pulsar.handlers.mqtt.PacketIdGenerator;
 import lombok.Getter;
+import lombok.extern.slf4j.Slf4j;
 import org.apache.bookkeeper.mledger.Entry;
 import org.apache.pulsar.client.api.MessageId;
 
+import java.nio.charset.StandardCharsets;
 import java.util.Objects;
 
-
+@Slf4j
 public class MQTTVirtualConsumer {
 
     @Getter
@@ -47,6 +49,7 @@ public class MQTTVirtualConsumer {
         }
 
         ChannelPromise promise = cnx.ctx().newPromise();
+        log.info("[test] Virtual consumer = " + topicName + ", message " + (msg.payload() != null ? new String(msg.payload().toString(StandardCharsets.UTF_8)) : "<empty>"));
         cnx.ctx().channel().write(msg);
         cnx.ctx().channel().writeAndFlush(Unpooled.EMPTY_BUFFER, promise);
         return promise;

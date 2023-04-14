@@ -16,6 +16,11 @@ package io.streamnative.pulsar.handlers.mqtt;
 import io.netty.handler.codec.mqtt.MqttPublishMessage;
 import io.streamnative.pulsar.handlers.mqtt.support.MQTTPublisherContext;
 import io.streamnative.pulsar.handlers.mqtt.utils.PulsarTopicUtils;
+
+import java.nio.charset.StandardCharsets;
+import java.util.Optional;
+import java.util.concurrent.CompletableFuture;
+
 import lombok.extern.slf4j.Slf4j;
 import org.apache.pulsar.broker.PulsarService;
 import org.apache.pulsar.broker.service.BrokerServiceException;
@@ -56,8 +61,11 @@ public abstract class AbstractQosPublishHandler implements QosPublishHandler {
     protected CompletableFuture<MessageId> writeToPulsarTopic(MqttPublishMessage msg) {
         return getTopicReference(msg).thenCompose(topicOp -> {
             MessageImpl<byte[]> message = toPulsarMsg(msg);
-            CompletableFuture<MessageId> future = topicOp.map(topic ->
-                            MQTTPublisherContext.publishMessages(message, topic.getName()))
+            CompletableFuture<MessageId> future = topicOp.map(topic -> {
+                    log.info("[test] Common publisher = " + topic + ", virtual = "+msg.variableHeader().topicName() +
+                        " message " + (msg.payload() != null ? msg.payload().toString(StandardCharsets.UTF_8) : "<empty>"));
+                    return MQTTPublisherContext.publishMessages(message, topic.getName());
+            })
                     .orElseGet(() -> FutureUtil.failedFuture(
                             new BrokerServiceException.TopicNotFoundException(msg.variableHeader().topicName())));
             message.release();
