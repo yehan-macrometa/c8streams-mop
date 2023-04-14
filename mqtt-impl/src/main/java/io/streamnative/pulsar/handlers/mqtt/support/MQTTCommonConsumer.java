@@ -25,17 +25,14 @@ import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.bookkeeper.mledger.Entry;
 import org.apache.bookkeeper.mledger.impl.PositionImpl;
-import org.apache.bookkeeper.util.collections.ConcurrentLongLongPairHashMap;
 import org.apache.pulsar.broker.service.Consumer;
 import org.apache.pulsar.broker.service.EntryBatchIndexesAcks;
 import org.apache.pulsar.broker.service.EntryBatchSizes;
 import org.apache.pulsar.broker.service.RedeliveryTracker;
-import org.apache.pulsar.broker.service.StickyKeyConsumerSelector;
 import org.apache.pulsar.broker.service.Subscription;
 import org.apache.pulsar.client.api.MessageId;
 import org.apache.pulsar.common.api.proto.CommandAck;
 import org.apache.pulsar.common.api.proto.CommandSubscribe;
-import org.apache.pulsar.common.protocol.Commands;
 
 import java.util.Collections;
 import java.util.List;
@@ -78,8 +75,6 @@ public class MQTTCommonConsumer extends Consumer {
 
     @Override
     public Future<Void> sendMessages(List<Entry> entries, EntryBatchSizes batchSizes, EntryBatchIndexesAcks batchIndexesAcks, int totalMessages, long totalBytes, long totalChunkedMessages, RedeliveryTracker redeliveryTracker) {
-        long startTime = System.nanoTime();
-
         log.debug("[{}-{}] Sending messages of {} entries", consumerName(), consumerId(), entries.size());
 
         for (int i = 0; i < entries.size(); i++) {
@@ -94,16 +89,13 @@ public class MQTTCommonConsumer extends Consumer {
             }
 
             if (StringUtil.isNullOrEmpty(virtualTopic)) {
-                log.debug("[{}-{}] Virtual topic name is empty for {} entry.", consumerName(), consumerId(), entry.getEntryId());
+                log.warn("[{}-{}] Virtual topic name is empty for {} entry.", consumerName(), consumerId(), entry.getEntryId());
                 continue;
             }
 
             List<MQTTVirtualConsumer> topicConsumers = consumers.get(virtualTopic);
 
             if (topicConsumers != null && topicConsumers.size() > 0) {
-                log.debug("[{}-{}] Sending message to {} consumer(s) for virtualTopic {}.", consumerName(), consumerId(),
-                        topicConsumers.size(), virtualTopic);
-
                 for (MqttPublishMessage message : messages) {
                     int finalI = i;
                     topicConsumers.forEach(mqttConsumer -> {
@@ -116,7 +108,7 @@ public class MQTTCommonConsumer extends Consumer {
                                     // But we cannot allow one consumer to stop sending messages to all other consumers.
                                     // A crash here does that.
                                     // So have to catch it.
-                                    log.debug("[{}-{}] Could not send the message to consumer {}.", consumerName(), consumerId(), mqttConsumer.getConsumerName(), e);
+                                    log.warn("[{}-{}] Could not send the message to consumer {}.", consumerName(), consumerId(), mqttConsumer.getConsumerName(), e);
                                 }
 
                                 try {
@@ -135,14 +127,10 @@ public class MQTTCommonConsumer extends Consumer {
                     });
                 }
             } else {
-                log.debug("MqttVirtualTopics: No consumers for virtualTopic {}.", virtualTopic);
-
                 // TODO: Introduce DeadLetterTopic functionality
                 addToPendingAcks(batchSizes, entry, i);
             }
         }
-
-        log.debug("Time spent sending: {}ns", System.nanoTime() - startTime);
 
         // TODO: VirtualMqttTopic: Figure out what to send
         return new SucceededFuture<>(ImmediateEventExecutor.INSTANCE, null);
@@ -186,7 +174,6 @@ public class MQTTCommonConsumer extends Consumer {
     }
 
     private void ack(long ledgerId, long entryId) {
-        log.debug("Acknowledging message Ledger={} Entry={}", ledgerId, entryId);
         getSubscription().acknowledgeMessage(
                 Collections.singletonList(PositionImpl.get(ledgerId, entryId)),
                 CommandAck.AckType.Individual, Collections.emptyMap());

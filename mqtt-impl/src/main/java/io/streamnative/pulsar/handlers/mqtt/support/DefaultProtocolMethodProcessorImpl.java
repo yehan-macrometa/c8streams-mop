@@ -173,17 +173,8 @@ public class DefaultProtocolMethodProcessorImpl implements ProtocolMethodProcess
         }
         int packetId = msg.variableHeader().messageId();
         OutstandingVirtualPacket packet = outstandingVirtualPacketContainer.remove(packetId);
-        if (log.isDebugEnabled()) {
-            log.debug("[PubAck] [{}] Outstanding Packet found: {}.", NettyUtils.getClientId(channel), packet != null);
-        }
         if (packet != null && packet.getConsumer() != null) {
-            if (log.isDebugEnabled()) {
-                log.debug("[PubAck] [{}] For : {}.", NettyUtils.getClientId(channel), packet.getConsumer().getTopicName());
-            }
             mqttService.getCommonConsumers(packet.getConsumer().getTopicName()).thenAccept(commonConsumers -> {
-                if (log.isDebugEnabled()) {
-                    log.debug("[PubAck] [{}] Acknowledging: {}.", NettyUtils.getClientId(channel), commonConsumers);
-                }
                 commonConsumers.forEach(c ->
                         c.acknowledgeMessage(packet.getLedgerId(), packet.getEntryId()));
             });
@@ -206,7 +197,7 @@ public class DefaultProtocolMethodProcessorImpl implements ProtocolMethodProcess
         String userRole = NettyUtils.getUserRole(channel);
         // Authorization the client
         if (!configuration.isMqttAuthorizationEnabled()) {
-            log.debug("[Publish] authorization is disabled, allowing client. CId={}, userRole={}", clientID, userRole);
+//            log.debug("[Publish] authorization is disabled, allowing client. CId={}, userRole={}", clientID, userRole);
             doPublish(channel, msg);
         } else {
             this.authorizationService.canProduceAsync(TopicName.get(msg.variableHeader().topicName()),
