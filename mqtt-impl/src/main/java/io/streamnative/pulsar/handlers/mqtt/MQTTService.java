@@ -78,40 +78,50 @@ public class MQTTService {
         this.commonConsumersMap = new ConcurrentHashMap<>();
     }
 
-    public synchronized CompletableFuture<List<MQTTCommonConsumer>> getCommonConsumers(String virtualTopicName) {
+    public CompletableFuture<List<MQTTCommonConsumer>> getCommonConsumers(String virtualTopicName) {
         CompletableFuture<List<MQTTCommonConsumer>> future = new CompletableFuture<>();
         String realTopicName = serverConfiguration.getSharder().getShardId(virtualTopicName);
-        int subscribersCount = serverConfiguration.getMqttRealTopicSubscribersCount();
-        if (subscribersCount < 1) {
-            subscribersCount = 1;
-        }
         List<MQTTCommonConsumer> consumers = commonConsumersMap.get(realTopicName);
 
         if (consumers != null) {
             future.complete(consumers);
         } else {
-            Subscription sub = null;
-            try {
-                sub = PulsarTopicUtils
-                    .getOrCreateSubscription(pulsarService, realTopicName, "commonSub",
-                        serverConfiguration.getDefaultTenant(), serverConfiguration.getDefaultNamespace(),
-                        serverConfiguration.getDefaultTopicDomain()).get();
-            } catch (Exception e) {
-                future.completeExceptionally(e);
-                throw new RuntimeException("Failed to create `commonSub` subscription for real topic = " + realTopicName, e);
+            synchronized (this) {
+                consumers = commonConsumersMap.get(realTopicName);
+
+                if (consumers != null) {
+                    future.complete(consumers);
+                } else {
+                    Subscription sub = null;
+                    try {
+                        sub = PulsarTopicUtils
+                                .getOrCreateSubscription(pulsarService, realTopicName, "commonSub",
+                                        serverConfiguration.getDefaultTenant(), serverConfiguration.getDefaultNamespace(),
+                                        serverConfiguration.getDefaultTopicDomain()).get();
+                    } catch (Exception e) {
+                        future.completeExceptionally(e);
+                        throw new RuntimeException("Failed to create `commonSub` subscription for real topic = " + realTopicName, e);
+                    }
+                    consumers = new ArrayList<>();
+
+                    int subscribersCount = serverConfiguration.getMqttRealTopicSubscribersCount();
+                    if (subscribersCount < 1) {
+                        subscribersCount = 1;
+                    }
+
+                    for (int i = 0; i < subscribersCount; i++) {
+                        MQTTStubCnx cnx = new MQTTStubCnx(pulsarService);
+                        MQTTCommonConsumer commonConsumer = new MQTTCommonConsumer(sub, sub.getTopicName(), "common_" + i, cnx, i);
+                        sub.addConsumer(commonConsumer);
+                        // TODO: `1000` value should be changed to some logic
+                        commonConsumer.flowPermits(1000);
+                        log.info("MqttVirtualTopics: Common consumer #{} for real topic {} initialized", i, realTopicName);
+                        consumers.add(commonConsumer);
+                    }
+                    commonConsumersMap.put(realTopicName, consumers);
+                    future.complete(consumers);
+                }
             }
-            consumers = new ArrayList<>();
-            for (int i = 0; i < subscribersCount; i++) {
-                MQTTStubCnx cnx = new MQTTStubCnx(pulsarService);
-                MQTTCommonConsumer commonConsumer = new MQTTCommonConsumer(sub, sub.getTopicName(), "common_"+i, cnx, i);
-                sub.addConsumer(commonConsumer);
-                // TODO: `1000` value should be changed to some logic
-                commonConsumer.flowPermits(1000);
-                log.info("MqttVirtualTopics: Common consumer #{} for real topic {} initialized", i, realTopicName);
-                consumers.add(commonConsumer);
-            }
-            commonConsumersMap.put(realTopicName, consumers);
-            future.complete(consumers);
         }
         return future;
     }
