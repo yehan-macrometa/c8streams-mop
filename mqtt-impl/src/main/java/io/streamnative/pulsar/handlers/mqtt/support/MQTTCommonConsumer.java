@@ -15,9 +15,10 @@ package io.streamnative.pulsar.handlers.mqtt.support;
 
 import io.netty.handler.codec.mqtt.MqttPublishMessage;
 import io.netty.handler.codec.mqtt.MqttQoS;
+import io.netty.util.concurrent.DefaultPromise;
 import io.netty.util.concurrent.Future;
 import io.netty.util.concurrent.ImmediateEventExecutor;
-import io.netty.util.concurrent.SucceededFuture;
+import io.netty.util.concurrent.PromiseCombiner;
 import io.netty.util.internal.StringUtil;
 import io.streamnative.pulsar.handlers.mqtt.PacketIdGenerator;
 import io.streamnative.pulsar.handlers.mqtt.utils.PulsarMessageConverter;
@@ -85,6 +86,8 @@ public class MQTTCommonConsumer extends Consumer {
     public Future<Void> sendMessages(List<Entry> entries, EntryBatchSizes batchSizes, EntryBatchIndexesAcks batchIndexesAcks, int totalMessages, long totalBytes, long totalChunkedMessages, RedeliveryTracker redeliveryTracker) {
         log.debug("[{}-{}] Sending messages of {} entries", consumerName(), consumerId(), entries.size());
 
+        PromiseCombiner promiseCombiner = new PromiseCombiner(ImmediateEventExecutor.INSTANCE);
+
         for (int i = 0; i < entries.size(); i++) {
             Entry entry = entries.get(i);
             int packetId = packetIdGenerator.nextPacketId();
@@ -112,7 +115,7 @@ public class MQTTCommonConsumer extends Consumer {
                         try {
                             orderedSendExecutor.executeOrdered(virtualTopic, () -> {
                                 try {
-                                    mqttConsumer.sendMessage(entry, message, packetId);
+                                    promiseCombiner.add(mqttConsumer.sendMessage(entry, message, packetId));
                                 } catch (Exception e) {
                                     // TODO: We need to fix each issue possible.
                                     // But we cannot allow one consumer to stop sending messages to all other consumers.
@@ -142,10 +145,22 @@ public class MQTTCommonConsumer extends Consumer {
             }
         }
 
-        getSubscription().consumerFlow(this, entries.size());
+        DefaultPromise<Void> combinedPromise = new DefaultPromise<>(ImmediateEventExecutor.INSTANCE);
+        promiseCombiner.finish(combinedPromise);
 
-        // TODO: VirtualMqttTopic: Figure out what to send
-        return new SucceededFuture<>(ImmediateEventExecutor.INSTANCE, null);
+        DefaultPromise<Void> finalPromise = new DefaultPromise<>(ImmediateEventExecutor.INSTANCE);
+
+        combinedPromise.addListener(future -> {
+            if (!future.isSuccess()) {
+                Throwable cause = future.cause();
+                String errorMessage = cause != null ? cause.getMessage() : "Unknown error";
+                log.warn("One or more promises in the combinedPromise have failed: {}", errorMessage);
+            }
+
+            finalPromise.setSuccess(null);
+        });
+
+        return finalPromise;
     }
 
     public void add(String mqttTopicName, MQTTVirtualConsumer consumer) {
