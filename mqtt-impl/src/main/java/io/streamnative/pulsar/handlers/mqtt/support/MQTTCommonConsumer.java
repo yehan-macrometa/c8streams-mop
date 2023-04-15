@@ -23,6 +23,7 @@ import io.streamnative.pulsar.handlers.mqtt.PacketIdGenerator;
 import io.streamnative.pulsar.handlers.mqtt.utils.PulsarMessageConverter;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.bookkeeper.common.util.OrderedExecutor;
 import org.apache.bookkeeper.mledger.Entry;
 import org.apache.bookkeeper.mledger.impl.PositionImpl;
 import org.apache.pulsar.broker.service.Consumer;
@@ -39,6 +40,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 /**
  * MQTT consumer.
@@ -49,6 +52,11 @@ public class MQTTCommonConsumer extends Consumer {
     private PacketIdGenerator packetIdGenerator = PacketIdGenerator.newNonZeroGenerator();
     @Getter
     private int index;
+    private final OrderedExecutor orderedSendExecutor = OrderedExecutor.newBuilder()
+            .name("mqtt-common-consumer-send")
+            .numThreads(50)
+            .build();
+    private final ExecutorService ackExecutor = Executors.newWorkStealingPool(50);
 
     public MQTTCommonConsumer(Subscription subscription, String pulsarTopicName, String consumerName, MQTTStubCnx cnx, int index) {
         super(subscription, CommandSubscribe.SubType.Exclusive, pulsarTopicName, index, 0, consumerName, 0, cnx,
@@ -83,9 +91,11 @@ public class MQTTCommonConsumer extends Consumer {
             List<MqttPublishMessage> messages = PulsarMessageConverter.toMqttMessages(null, entry,
                     packetId, MqttQoS.AT_LEAST_ONCE);
 
-            String virtualTopic = null;
+            String virtualTopic;
             if (messages.size() > 0) {
                 virtualTopic = messages.get(0).variableHeader().topicName();
+            } else {
+                virtualTopic = null;
             }
 
             if (StringUtil.isNullOrEmpty(virtualTopic)) {
@@ -100,7 +110,7 @@ public class MQTTCommonConsumer extends Consumer {
                     int finalI = i;
                     topicConsumers.forEach(mqttConsumer -> {
                         try {
-                            mqttConsumer.getCnx().ctx().channel().eventLoop().execute(() -> {
+                            orderedSendExecutor.executeOrdered(virtualTopic, () -> {
                                 try {
                                     mqttConsumer.sendMessage(entry, message, packetId);
                                 } catch (Exception e) {
@@ -165,12 +175,14 @@ public class MQTTCommonConsumer extends Consumer {
     }
 
     public void acknowledgeMessage(long ledgerId, long entryId) {
-        try {
-            ack(ledgerId, entryId);
+        ackExecutor.submit(() -> {
+            try {
+                ack(ledgerId, entryId);
 //            getPendingAcks().remove(ledgerId, entryId);
-        } catch (Exception e) {
-            log.warn("Could not acknowledge message. {}", e.getMessage());
-        }
+            } catch (Exception e) {
+                log.warn("Could not acknowledge message. {}", e.getMessage());
+            }
+        });
     }
 
     private void ack(long ledgerId, long entryId) {
