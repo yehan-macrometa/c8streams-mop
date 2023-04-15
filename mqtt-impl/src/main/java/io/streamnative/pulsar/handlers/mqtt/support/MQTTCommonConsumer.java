@@ -56,21 +56,21 @@ public class MQTTCommonConsumer extends Consumer {
         this.index = index;
 
         // TODO: Use ScheduledExecutor and clean this part.
-        new Thread(() -> {
-            while (true) {
-                log.info("[{}-{}] Redelivering unacked messages.", consumerName, consumerId());
-                try {
-                    subscription.getDispatcher().redeliverUnacknowledgedMessages(this);
-                } catch (Exception e) {
-                    e.printStackTrace();
-                }
-                try {
-                    Thread.sleep(30000);
-                } catch (InterruptedException e) {
-                    e.printStackTrace();
-                }
-            }
-        }).start();
+//        new Thread(() -> {
+//            while (true) {
+//                log.info("[{}-{}] Redelivering unacked messages.", consumerName, consumerId());
+//                try {
+//                    subscription.getDispatcher().redeliverUnacknowledgedMessages(this);
+//                } catch (Exception e) {
+//                    e.printStackTrace();
+//                }
+//                try {
+//                    Thread.sleep(30000);
+//                } catch (InterruptedException e) {
+//                    e.printStackTrace();
+//                }
+//            }
+//        }).start();
     }
 
     @Override
