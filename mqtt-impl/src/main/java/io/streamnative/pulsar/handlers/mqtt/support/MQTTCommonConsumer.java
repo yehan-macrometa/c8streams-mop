@@ -142,6 +142,8 @@ public class MQTTCommonConsumer extends Consumer {
             }
         }
 
+        getSubscription().consumerFlow(this, entries.size());
+
         // TODO: VirtualMqttTopic: Figure out what to send
         return new SucceededFuture<>(ImmediateEventExecutor.INSTANCE, null);
     }
