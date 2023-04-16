@@ -14,6 +14,7 @@
 package io.streamnative.pulsar.handlers.mqtt;
 
 import io.streamnative.pulsar.handlers.mqtt.support.MQTTVirtualConsumer;
+import org.apache.pulsar.client.api.MessageId;
 
 /**
  * Outstanding packet that the broker sent to clients.
@@ -24,6 +25,7 @@ public class OutstandingVirtualPacket {
     private final int packetId;
     private final long ledgerId;
     private final long entryId;
+    private final MessageId messageId;
 
 
     public OutstandingVirtualPacket(MQTTVirtualConsumer consumer, int packetId, long ledgerId, long entryId) {
@@ -31,6 +33,16 @@ public class OutstandingVirtualPacket {
         this.packetId = packetId;
         this.ledgerId = ledgerId;
         this.entryId = entryId;
+        this.messageId = null;
+    }
+
+
+    public OutstandingVirtualPacket(MQTTVirtualConsumer consumer, int packetId,MessageId messageId) {
+        this.consumer = consumer;
+        this.packetId = packetId;
+        this.ledgerId = 0;
+        this.entryId = 0;
+        this.messageId = messageId;
     }
 
     public MQTTVirtualConsumer getConsumer() {
@@ -47,5 +59,9 @@ public class OutstandingVirtualPacket {
 
     public long getEntryId() {
         return entryId;
+    }
+
+    public MessageId getMessageId() {
+        return messageId;
     }
 }

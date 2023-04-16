@@ -13,6 +13,7 @@ import io.streamnative.pulsar.handlers.mqtt.OutstandingVirtualPacketContainer;
 import io.streamnative.pulsar.handlers.mqtt.PacketIdGenerator;
 import lombok.Getter;
 import org.apache.bookkeeper.mledger.Entry;
+import org.apache.pulsar.client.api.MessageId;
 
 import java.util.Objects;
 
@@ -43,6 +44,17 @@ public class MQTTVirtualConsumer {
         if (MqttQoS.AT_MOST_ONCE != qos) {
             outstandingVirtualPacketContainer.add(new OutstandingVirtualPacket(this, packetId, entry.getLedgerId(),
                     entry.getEntryId()));
+        }
+
+        ChannelPromise promise = cnx.ctx().newPromise();
+        cnx.ctx().channel().write(msg);
+        cnx.ctx().channel().writeAndFlush(Unpooled.EMPTY_BUFFER, promise);
+        return promise;
+    }
+
+    public ChannelPromise sendMessage(MqttPublishMessage msg, int packetId, MessageId messageId) {
+        if (MqttQoS.AT_MOST_ONCE != qos) {
+            outstandingVirtualPacketContainer.add(new OutstandingVirtualPacket(this, packetId, messageId));
         }
 
         ChannelPromise promise = cnx.ctx().newPromise();

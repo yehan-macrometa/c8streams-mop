@@ -176,7 +176,7 @@ public class DefaultProtocolMethodProcessorImpl implements ProtocolMethodProcess
         if (packet != null && packet.getConsumer() != null) {
             mqttService.getCommonConsumers(packet.getConsumer().getTopicName()).thenAccept(commonConsumers -> {
                 commonConsumers.forEach(c ->
-                        c.acknowledgeMessage(packet.getLedgerId(), packet.getEntryId()));
+                        c.acknowledgeMessage(packet.getLedgerId(), packet.getEntryId(), packet.getMessageId()));
             });
 
             /*packet.getConsumer().getSubscription().acknowledgeMessage(

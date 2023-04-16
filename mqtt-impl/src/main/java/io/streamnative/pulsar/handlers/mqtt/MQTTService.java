@@ -110,13 +110,17 @@ public class MQTTService {
                     }
 
                     for (int i = 0; i < subscribersCount; i++) {
-                        MQTTStubCnx cnx = new MQTTStubCnx(pulsarService);
-                        MQTTCommonConsumer commonConsumer = new MQTTCommonConsumer(sub, sub.getTopicName(), "common_" + i, cnx, i);
-                        sub.addConsumer(commonConsumer);
-                        // TODO: `1000` value should be changed to some logic
-                        commonConsumer.flowPermits(1000);
-                        log.info("MqttVirtualTopics: Common consumer #{} for real topic {} initialized", i, realTopicName);
-                        consumers.add(commonConsumer);
+                        try {
+                            MQTTStubCnx cnx = new MQTTStubCnx(pulsarService);
+                            MQTTCommonConsumer commonConsumer = new MQTTCommonConsumer(sub, sub.getTopicName(), "common_" + i, cnx, i);
+//                        sub.addConsumer(commonConsumer);
+                            // TODO: `1000` value should be changed to some logic
+//                        commonConsumer.flowPermits(1000);
+                            log.info("MqttVirtualTopics: Common consumer #{} for real topic {} initialized", i, realTopicName);
+                            consumers.add(commonConsumer);
+                        } catch (Exception e) {
+                            log.error("Could not create common consumer", e);
+                        }
                     }
                     commonConsumersMap.put(realTopicName, consumers);
                     future.complete(consumers);
