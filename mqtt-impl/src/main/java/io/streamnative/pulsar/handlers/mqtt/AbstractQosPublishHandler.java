@@ -15,23 +15,16 @@ package io.streamnative.pulsar.handlers.mqtt;
 
 import static io.streamnative.pulsar.handlers.mqtt.utils.PulsarMessageConverter.toPulsarMsg;
 import io.netty.handler.codec.mqtt.MqttPublishMessage;
+import io.streamnative.pulsar.handlers.mqtt.utils.MessagePublishContext;
 import io.streamnative.pulsar.handlers.mqtt.utils.PulsarTopicUtils;
-
-import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.TimeUnit;
 
 import lombok.extern.slf4j.Slf4j;
+import org.apache.bookkeeper.mledger.impl.PositionImpl;
 import org.apache.pulsar.broker.PulsarService;
 import org.apache.pulsar.broker.service.BrokerServiceException;
 import org.apache.pulsar.broker.service.Topic;
-import org.apache.pulsar.client.api.AuthenticationFactory;
-import org.apache.pulsar.client.api.MessageId;
-import org.apache.pulsar.client.api.Producer;
-import org.apache.pulsar.client.api.PulsarClient;
-import org.apache.pulsar.client.api.PulsarClientException;
 import org.apache.pulsar.client.impl.MessageImpl;
 import org.apache.pulsar.common.util.FutureUtil;
 
@@ -43,25 +36,6 @@ public abstract class AbstractQosPublishHandler implements QosPublishHandler {
 
     protected final PulsarService pulsarService;
     protected final MQTTServerConfiguration configuration;
-    private static PulsarClient client;
-
-    static {
-        try {
-            // TODO: Make the params configurable
-            client = PulsarClient.builder()
-                    .serviceUrl("pulsar://localhost:6650")
-                    .authentication(AuthenticationFactory.token("eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJhZG1pbiJ9.HC3JF9HhzUP1nnABqH0NL5Oj7_cs2buz9G5a_Vk710I"))
-                    .operationTimeout(1, TimeUnit.MINUTES)
-                    .connectionsPerBroker(50)
-                    .ioThreads(50)
-                    .listenerThreads(50)
-                    .build();
-        } catch (PulsarClientException e) {
-            log.error("Could not create Pulsar Client.", e);
-        }
-    }
-
-    private static final Map<String, Producer<byte[]>> producers = new ConcurrentHashMap<>();
 
     protected AbstractQosPublishHandler(PulsarService pulsarService, MQTTServerConfiguration configuration) {
         this.pulsarService = pulsarService;
@@ -78,38 +52,15 @@ public abstract class AbstractQosPublishHandler implements QosPublishHandler {
                 , configuration.getDefaultTopicDomain());
     }
 
-    protected CompletableFuture<MessageId> writeToPulsarTopic(MqttPublishMessage msg) {
+    protected CompletableFuture<PositionImpl> writeToPulsarTopic(MqttPublishMessage msg) {
         return getTopicReference(msg).thenCompose(topicOp -> {
             MessageImpl<byte[]> message = toPulsarMsg(msg);
-            CompletableFuture<MessageId> future = topicOp.map(topic -> {
-                CompletableFuture<MessageId> f = getProducer(topic.getName()).newMessage()
-                        .properties(message.getProperties())
-                        .value(message.getValue())
-                        .sendAsync();
-                message.release();
-                return f;
-            }).orElseGet(() ->
-                FutureUtil.failedFuture(
-                        new BrokerServiceException.TopicNotFoundException(msg.variableHeader().topicName())));
-            return future;
-        });
-    }
-
-    private Producer<byte[]> getProducer(String topic) {
-        return producers.computeIfAbsent(topic, t -> {
-            try {
-                return client.newProducer()
-                        .topic(t)
-                        .blockIfQueueFull(true)
-                        .sendTimeout(1, TimeUnit.MINUTES)
-                        .maxPendingMessages(10)
-                        .batchingMaxMessages(1000)
-                        .batchingMaxPublishDelay(100, TimeUnit.MILLISECONDS)
-                        .create();
-            } catch (PulsarClientException e) {
-                log.error("Could not create producer.", e);
-                return null;
-            }
+            CompletableFuture<PositionImpl> pos = topicOp.map(topic ->
+                            MessagePublishContext.publishMessages(message, topic))
+                    .orElseGet(() -> FutureUtil.failedFuture(
+                            new BrokerServiceException.TopicNotFoundException(msg.variableHeader().topicName())));
+            message.release();
+            return pos;
         });
     }
 }
