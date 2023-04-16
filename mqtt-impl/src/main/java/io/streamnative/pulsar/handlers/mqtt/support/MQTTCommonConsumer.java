@@ -13,7 +13,6 @@
  */
 package io.streamnative.pulsar.handlers.mqtt.support;
 
-import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
 import io.netty.channel.ChannelPromise;
 import io.netty.handler.codec.mqtt.MqttPublishMessage;
@@ -42,7 +41,6 @@ import org.apache.pulsar.client.api.PulsarClient;
 import org.apache.pulsar.client.api.PulsarClientException;
 import org.apache.pulsar.client.api.SubscriptionInitialPosition;
 import org.apache.pulsar.common.api.proto.CommandAck;
-import org.apache.pulsar.common.api.proto.CommandSubscribe;
 
 import java.util.ArrayList;
 import java.util.Collections;
@@ -93,10 +91,8 @@ public class MQTTCommonConsumer {
                     .topic(pulsarTopicName)
                     .subscriptionName(subscription.getName())
                     .subscriptionInitialPosition(SubscriptionInitialPosition.Earliest)
-                    .messageListener((consumer, msg) -> {
-                        sendMessages(consumer, msg);
-                    })
-                    .receiverQueueSize(100000)
+                    .messageListener(this::sendMessages)
+                    .receiverQueueSize(10000)
                     .subscribe();;
         } catch (PulsarClientException e) {
             log.error("Could not create common consumer.", e);
@@ -186,13 +182,15 @@ public class MQTTCommonConsumer {
                             }
                         });
                 }
-//            try {
-//                semaphore.acquire(taskCount.get());
-//            } catch (Exception e) {
-//                log.error("Could not wait for permits.", e);
-//            }
-//
+            try {
+                semaphore.acquire(taskCount.get());
+            } catch (Exception e) {
+                log.error("Could not wait for permits.", e);
+            }
+
 //            CompletableFuture<Void> combinedFuture = CompletableFuture.allOf(futures.toArray(new CompletableFuture[0]));
+//            combinedFuture.get();
+
 //
 //            log.info("Creating final promise...");
 //            DefaultPromise<Void> finalPromise = new DefaultPromise<>(ImmediateEventExecutor.INSTANCE);
