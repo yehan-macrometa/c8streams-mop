@@ -17,21 +17,12 @@ import io.netty.buffer.Unpooled;
 import io.netty.channel.ChannelPromise;
 import io.netty.handler.codec.mqtt.MqttPublishMessage;
 import io.netty.handler.codec.mqtt.MqttQoS;
-import io.netty.util.concurrent.DefaultPromise;
-import io.netty.util.concurrent.Future;
-import io.netty.util.concurrent.ImmediateEventExecutor;
-import io.netty.util.concurrent.SucceededFuture;
 import io.netty.util.internal.StringUtil;
 import io.streamnative.pulsar.handlers.mqtt.PacketIdGenerator;
-import io.streamnative.pulsar.handlers.mqtt.utils.PulsarMessageConverter;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.bookkeeper.common.util.OrderedExecutor;
-import org.apache.bookkeeper.mledger.Entry;
 import org.apache.bookkeeper.mledger.impl.PositionImpl;
-import org.apache.pulsar.broker.service.EntryBatchIndexesAcks;
-import org.apache.pulsar.broker.service.EntryBatchSizes;
-import org.apache.pulsar.broker.service.RedeliveryTracker;
 import org.apache.pulsar.broker.service.Subscription;
 import org.apache.pulsar.client.api.AuthenticationFactory;
 import org.apache.pulsar.client.api.Consumer;
@@ -73,9 +64,7 @@ public class MQTTCommonConsumer {
     private final ExecutorService ackExecutor = Executors.newWorkStealingPool(50);
     private Consumer consumer;
 
-    public MQTTCommonConsumer(Subscription subscription, String pulsarTopicName, String consumerName, MQTTStubCnx cnx, int index) {
-//        super(subscription, CommandSubscribe.SubType.Exclusive, pulsarTopicName, index, 0, consumerName, 0, cnx,
-//                "", null, false, CommandSubscribe.InitialPosition.Latest, null, MessageId.latest);
+    public MQTTCommonConsumer(Subscription subscription, String pulsarTopicName, String consumerName, int index) {
         this.index = index;
         this.subscription = subscription;
         try {
@@ -88,6 +77,7 @@ public class MQTTCommonConsumer {
                     .listenerThreads(50)
                     .build()
                     .newConsumer()
+                    .consumerName(consumerName)
                     .topic(pulsarTopicName)
                     .subscriptionName(subscription.getName())
                     .subscriptionInitialPosition(SubscriptionInitialPosition.Earliest)
@@ -122,175 +112,65 @@ public class MQTTCommonConsumer {
             Semaphore semaphore = new Semaphore(0);
             List<CompletableFuture<Void>> futures = new ArrayList<>();
 
-                int packetId = packetIdGenerator.nextPacketId();
+            int packetId = packetIdGenerator.nextPacketId();
 
-                String virtualTopic = msg.getProperty("virtualTopic");
+            String virtualTopic = msg.getProperty("virtualTopic");
 
-                if (StringUtil.isNullOrEmpty(virtualTopic)) {
-//                    log.warn("[{}-{}] Virtual topic name is empty for {} entry.", consumerName(), consumerId(), entry.getEntryId());
-                    return;
-                }
-
-                List<MQTTVirtualConsumer> topicConsumers = consumers.get(virtualTopic);
-
-                if (topicConsumers != null && topicConsumers.size() > 0) {
-                        topicConsumers.forEach(mqttConsumer -> {
-
-                            MqttPublishMessage message = MessageBuilder.publish()
-                                    .messageId(packetId)
-                                    .payload(Unpooled.copiedBuffer(msg.getData()))
-                                    .topicName(virtualTopic)
-                                    .qos(mqttConsumer.getQos())
-                                    .retained(false)
-                                    .build();
-                            try {
-                                taskCount.getAndIncrement();
-                                orderedSendExecutor.executeOrdered(virtualTopic, () -> {
-                                    mqttConsumer.getCnx().ctx().channel().eventLoop().execute(() -> {
-                                        try {
-                                            CompletableFuture<Void> future = new CompletableFuture<>();
-                                            futures.add(future);
-
-                                            ChannelPromise promise = mqttConsumer.sendMessage(message, packetId, msg.getMessageId());
-                                            promise.addListener(f -> {
-                                                if (!f.isSuccess()) {
-                                                    log.warn("Could not send message. {}", f.cause() != null ? f.cause().getMessage() : "");
-                                                }
-                                                future.complete(null);
-                                            });
-                                        } catch (Exception e) {
-                                            // TODO: We need to fix each issue possible.
-                                            // But we cannot allow one consumer to stop sending messages to all other consumers.
-                                            // A crash here does that.
-                                            // So have to catch it.
-//                                            log.warn("[{}-{}] Could not send the message to consumer {}.", consumerName(), consumerId(), mqttConsumer.getConsumerName(), e);
-                                        } finally {
-                                            semaphore.release();
-                                        }
-
-                                        try {
-                                            if (mqttConsumer.getQos() == MqttQoS.AT_MOST_ONCE) {
-                                                consumer.acknowledge(msg);
-                                            }
-                                        } catch (Exception e) {
-                                            log.error("Error when handling acknowledgement.", e);
-                                        }
-                                    });
-                                });
-                            } catch (Exception e) {
-                                log.error("Error when accessing channel executor.", e);
-                            }
-                        });
-                }
-            try {
-                semaphore.acquire(taskCount.get());
-            } catch (Exception e) {
-                log.error("Could not wait for permits.", e);
+            if (StringUtil.isNullOrEmpty(virtualTopic)) {
+                log.warn("[{}] Virtual topic name is empty for message {}.", consumer.getConsumerName(), msg.getMessageId());
+                return;
             }
 
-//            CompletableFuture<Void> combinedFuture = CompletableFuture.allOf(futures.toArray(new CompletableFuture[0]));
-//            combinedFuture.get();
+            List<MQTTVirtualConsumer> topicConsumers = consumers.get(virtualTopic);
 
-//
-//            log.info("Creating final promise...");
-//            DefaultPromise<Void> finalPromise = new DefaultPromise<>(ImmediateEventExecutor.INSTANCE);
-//
-//            combinedFuture.whenComplete((result, throwable) -> {
-//                if (throwable != null) {
-//                    // Log a warning message if the combinedFuture has failed
-//                    log.warn("One or more CompletableFuture<Void> in the combinedFuture have failed: {}", throwable.getMessage());
-//                }
-//                finalPromise.setSuccess(null);
-//            });
-//
-//            finalPromise.addListener(future -> {
-//                log.info("Final promise completed successfully: {}", future.isSuccess());
-//            });
-//
-//            return finalPromise;
-        } catch (Exception e) {
-            log.warn("Send messages failed. {}", e.getMessage());
-//            return new SucceededFuture<>(ImmediateEventExecutor.INSTANCE, null);
-        }
-    }
+            if (topicConsumers != null && topicConsumers.size() > 0) {
+                topicConsumers.forEach(mqttConsumer -> {
 
-    //    @Override
-    public Future<Void> sendMessages(List<Entry> entries, EntryBatchSizes batchSizes, EntryBatchIndexesAcks batchIndexesAcks, int totalMessages, long totalBytes, long totalChunkedMessages, RedeliveryTracker redeliveryTracker) {
-//        log.debug("[{}-{}] Sending messages of {} entries", consumerName(), consumerId(), entries.size());
-        try {
-            AtomicInteger taskCount = new AtomicInteger();
-            Semaphore semaphore = new Semaphore(0);
-            List<CompletableFuture<Void>> futures = new ArrayList<>();
+                    MqttPublishMessage message = MessageBuilder.publish()
+                            .messageId(packetId)
+                            .payload(Unpooled.copiedBuffer(msg.getData()))
+                            .topicName(virtualTopic)
+                            .qos(mqttConsumer.getQos())
+                            .retained(false)
+                            .build();
+                    try {
+                        taskCount.getAndIncrement();
+                        orderedSendExecutor.executeOrdered(virtualTopic, () -> {
+                            mqttConsumer.getCnx().ctx().channel().eventLoop().execute(() -> {
+                                try {
+                                    CompletableFuture<Void> future = new CompletableFuture<>();
+                                    futures.add(future);
 
-            for (int i = 0; i < entries.size(); i++) {
-                Entry entry = entries.get(i);
-                int packetId = packetIdGenerator.nextPacketId();
-                List<MqttPublishMessage> messages = PulsarMessageConverter.toMqttMessages(null, entry,
-                        packetId, MqttQoS.AT_LEAST_ONCE);
-
-                String virtualTopic;
-                if (messages.size() > 0) {
-                    virtualTopic = messages.get(0).variableHeader().topicName();
-                } else {
-                    virtualTopic = null;
-                }
-
-                if (StringUtil.isNullOrEmpty(virtualTopic)) {
-//                    log.warn("[{}-{}] Virtual topic name is empty for {} entry.", consumerName(), consumerId(), entry.getEntryId());
-                    continue;
-                }
-
-                List<MQTTVirtualConsumer> topicConsumers = consumers.get(virtualTopic);
-
-                if (topicConsumers != null && topicConsumers.size() > 0) {
-                    for (MqttPublishMessage message : messages) {
-                        int finalI = i;
-                        topicConsumers.forEach(mqttConsumer -> {
-                            try {
-                                taskCount.getAndIncrement();
-                                orderedSendExecutor.executeOrdered(virtualTopic, () -> {
-                                    mqttConsumer.getCnx().ctx().channel().eventLoop().execute(() -> {
-                                        try {
-                                            CompletableFuture<Void> future = new CompletableFuture<>();
-                                            futures.add(future);
-
-                                            ChannelPromise promise = mqttConsumer.sendMessage(entry, message, packetId);
-                                            promise.addListener(f -> {
-                                                if (!f.isSuccess()) {
-                                                    log.warn("Could not send message. {}", f.cause() != null ? f.cause().getMessage() : "");
-                                                }
-                                                future.complete(null);
-                                            });
-                                        } catch (Exception e) {
-                                            // TODO: We need to fix each issue possible.
-                                            // But we cannot allow one consumer to stop sending messages to all other consumers.
-                                            // A crash here does that.
-                                            // So have to catch it.
-//                                            log.warn("[{}-{}] Could not send the message to consumer {}.", consumerName(), consumerId(), mqttConsumer.getConsumerName(), e);
-                                        } finally {
-                                            semaphore.release();
+                                    ChannelPromise promise = mqttConsumer.sendMessage(message, packetId, msg.getMessageId());
+                                    promise.addListener(f -> {
+                                        if (!f.isSuccess()) {
+                                            log.warn("Could not send message. {}", f.cause() != null ? f.cause().getMessage() : "");
                                         }
-
-                                        try {
-                                            if (mqttConsumer.getQos() == MqttQoS.AT_MOST_ONCE) {
-                                                ack(entry.getLedgerId(), entry.getEntryId());
-                                            } else {
-                                                addToPendingAcks(batchSizes, entry, finalI);
-                                            }
-                                        } catch (Exception e) {
-                                            log.error("Error when handling acknowledgement.", e);
-                                        }
+                                        future.complete(null);
                                     });
-                                });
-                            } catch (Exception e) {
-                                log.error("Error when accessing channel executor.", e);
-                            }
+                                } catch (Exception e) {
+                                    // TODO: We need to fix each issue possible.
+                                    // But we cannot allow one consumer to stop sending messages to all other consumers.
+                                    // A crash here does that.
+                                    // So have to catch it.
+                                    log.warn("[{}] Could not send the message to consumer {}.", consumer.getConsumerName(), mqttConsumer.getConsumerName(), e);
+                                } finally {
+                                    semaphore.release();
+                                }
+
+                                try {
+                                    if (mqttConsumer.getQos() == MqttQoS.AT_MOST_ONCE) {
+                                        consumer.acknowledge(msg);
+                                    }
+                                } catch (Exception e) {
+                                    log.error("Error when handling acknowledgement.", e);
+                                }
+                            });
                         });
+                    } catch (Exception e) {
+                        log.error("Error when accessing channel executor.", e);
                     }
-                } else {
-                    // TODO: Introduce DeadLetterTopic functionality
-                    addToPendingAcks(batchSizes, entry, i);
-                }
+                });
             }
 
             try {
@@ -298,28 +178,8 @@ public class MQTTCommonConsumer {
             } catch (Exception e) {
                 log.error("Could not wait for permits.", e);
             }
-
-            CompletableFuture<Void> combinedFuture = CompletableFuture.allOf(futures.toArray(new CompletableFuture[0]));
-
-            log.info("Creating final promise...");
-            DefaultPromise<Void> finalPromise = new DefaultPromise<>(ImmediateEventExecutor.INSTANCE);
-
-            combinedFuture.whenComplete((result, throwable) -> {
-                if (throwable != null) {
-                    // Log a warning message if the combinedFuture has failed
-                    log.warn("One or more CompletableFuture<Void> in the combinedFuture have failed: {}", throwable.getMessage());
-                }
-                finalPromise.setSuccess(null);
-            });
-
-            finalPromise.addListener(future -> {
-                log.info("Final promise completed successfully: {}", future.isSuccess());
-            });
-
-            return finalPromise;
         } catch (Exception e) {
             log.warn("Send messages failed. {}", e.getMessage());
-            return new SucceededFuture<>(ImmediateEventExecutor.INSTANCE, null);
         }
     }
 
@@ -337,20 +197,6 @@ public class MQTTCommonConsumer {
         }
     }
 
-    private void addToPendingAcks(EntryBatchSizes batchSizes, Entry entry, int entryIndex) {
-//        ConcurrentLongLongPairHashMap pendingAcks = getPendingAcks();
-//        Subscription subscription = getSubscription();
-//        if (pendingAcks != null) {
-//            int batchSize = batchSizes.getBatchSize(entryIndex);
-//            pendingAcks.put(entry.getLedgerId(), entry.getEntryId(), batchSize, 1);
-//            if (log.isDebugEnabled()){
-//                log.debug("[{}-{}] Added {}:{} ledger entry with batchSize of {} to pendingAcks in"
-//                                + " broker.service.Consumer",
-//                        subscription.getTopicName(), subscription, entry.getLedgerId(), entry.getEntryId(), batchSize);
-//            }
-//        }
-    }
-
     public void acknowledgeMessage(long ledgerId, long entryId, MessageId messageId) {
         ackExecutor.submit(() -> {
             try {
@@ -359,7 +205,6 @@ public class MQTTCommonConsumer {
                 } else {
                     ack(messageId);
                 }
-//            getPendingAcks().remove(ledgerId, entryId);
             } catch (Exception e) {
                 log.warn("Could not acknowledge message. {}", e.getMessage());
             }
