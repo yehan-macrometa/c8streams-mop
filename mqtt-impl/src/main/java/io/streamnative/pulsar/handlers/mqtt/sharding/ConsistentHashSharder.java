@@ -37,16 +37,15 @@ public class ConsistentHashSharder implements Sharder {
 
     @Override
     public String getShardId(String topic) {
-        return "persistent://yehan_test.com/c8local.phonepe/y1_0";
-//        if (circle.isEmpty()) {
-//            return null;
-//        }
-//        int hash = hash(topic);
-//        if (!circle.containsKey(hash)) {
-//            SortedMap<Integer, String> tailMap = circle.tailMap(hash);
-//            hash = tailMap.isEmpty() ? circle.firstKey() : tailMap.firstKey();
-//        }
-//        return circle.get(hash);
+        if (circle.isEmpty()) {
+            return null;
+        }
+        int hash = hash(topic);
+        if (!circle.containsKey(hash)) {
+            SortedMap<Integer, String> tailMap = circle.tailMap(hash);
+            hash = tailMap.isEmpty() ? circle.firstKey() : tailMap.firstKey();
+        }
+        return circle.get(hash);
     }
 
     private int hash(String key) {
