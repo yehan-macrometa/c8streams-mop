@@ -83,6 +83,7 @@ public class MQTTCommonConsumer {
         try {
             consumer = PulsarClient.builder()
                     .serviceUrl("pulsar://localhost:6650")
+                    .authentication(AuthenticationFactory.token("eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJhZG1pbiJ9.HC3JF9HhzUP1nnABqH0NL5Oj7_cs2buz9G5a_Vk710I"))
                     .operationTimeout(1, TimeUnit.MINUTES)
                     .connectionsPerBroker(50)
                     .ioThreads(50)
