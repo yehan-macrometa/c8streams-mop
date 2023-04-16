@@ -16,19 +16,24 @@ package io.streamnative.pulsar.handlers.mqtt;
 import io.streamnative.pulsar.handlers.mqtt.support.MQTTCommonConsumer;
 import io.streamnative.pulsar.handlers.mqtt.support.MQTTMetricsCollector;
 import io.streamnative.pulsar.handlers.mqtt.support.MQTTMetricsProvider;
-import io.streamnative.pulsar.handlers.mqtt.support.MQTTStubCnx;
 import io.streamnative.pulsar.handlers.mqtt.utils.PulsarTopicUtils;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.bookkeeper.common.util.OrderedExecutor;
 import org.apache.pulsar.broker.PulsarService;
 import org.apache.pulsar.broker.authorization.AuthorizationService;
 import org.apache.pulsar.broker.service.BrokerService;
 import org.apache.pulsar.broker.service.Subscription;
+import org.apache.pulsar.client.api.PulsarClient;
+import org.apache.pulsar.client.api.PulsarClientException;
 
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 
 /**
  * Main class for mqtt service.
@@ -62,6 +67,9 @@ public class MQTTService {
 
     @Getter
     private final ConcurrentHashMap<String, List<MQTTCommonConsumer>> commonConsumersMap;
+    private final OrderedExecutor orderedSendExecutor;
+    private final ExecutorService ackExecutor;
+    private final PulsarClient client;
 
     public MQTTService(BrokerService brokerService, MQTTServerConfiguration serverConfiguration) {
         this.brokerService = brokerService;
@@ -76,6 +84,28 @@ public class MQTTService {
                 serverConfiguration.getMqttAuthenticationMethods()) : null;
         this.connectionManager = new MQTTConnectionManager();
         this.commonConsumersMap = new ConcurrentHashMap<>();
+
+        int numThreads = serverConfiguration.getMqttNumConsumerThreads();
+        orderedSendExecutor = OrderedExecutor.newBuilder()
+                .name("mqtt-common-consumer-send")
+                .numThreads(numThreads)
+                .build();
+        ackExecutor = Executors.newWorkStealingPool(numThreads);
+
+        try {
+            client = PulsarClient.builder()
+                    .serviceUrl("pulsar://localhost:6650")
+                    .authentication(
+                            brokerService.getPulsar().getConfiguration().getBrokerClientAuthenticationPlugin(),
+                            brokerService.getPulsar().getConfiguration().getBrokerClientAuthenticationParameters())
+                    .operationTimeout(1, TimeUnit.MINUTES)
+                    .connectionsPerBroker(numThreads)
+                    .ioThreads(numThreads)
+                    .listenerThreads(numThreads)
+                    .build();
+        } catch (PulsarClientException e) {
+            throw new RuntimeException(e);
+        }
     }
 
     public CompletableFuture<List<MQTTCommonConsumer>> getCommonConsumers(String virtualTopicName) {
@@ -111,7 +141,7 @@ public class MQTTService {
 
                     for (int i = 0; i < subscribersCount; i++) {
                         try {
-                            MQTTCommonConsumer commonConsumer = new MQTTCommonConsumer(sub, sub.getTopicName(), "common_" + i, i);
+                            MQTTCommonConsumer commonConsumer = new MQTTCommonConsumer(sub, sub.getTopicName(), "common_" + i, i, orderedSendExecutor, ackExecutor, client);
                             log.info("MqttVirtualTopics: Common consumer #{} for real topic {} initialized", i, realTopicName);
                             consumers.add(commonConsumer);
                         } catch (Exception e) {

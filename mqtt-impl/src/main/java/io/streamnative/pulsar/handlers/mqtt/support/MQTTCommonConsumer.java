@@ -57,26 +57,19 @@ public class MQTTCommonConsumer {
     private PacketIdGenerator packetIdGenerator = PacketIdGenerator.newNonZeroGenerator();
     @Getter
     private int index;
-    private final OrderedExecutor orderedSendExecutor = OrderedExecutor.newBuilder()
-            .name("mqtt-common-consumer-send")
-            .numThreads(50)
-            .build();
-    private final ExecutorService ackExecutor = Executors.newWorkStealingPool(50);
-    private Consumer consumer;
+    private final OrderedExecutor orderedSendExecutor;
+    private final ExecutorService ackExecutor;
+    private Consumer<byte[]> consumer;
 
-    public MQTTCommonConsumer(Subscription subscription, String pulsarTopicName, String consumerName, int index) {
+    public MQTTCommonConsumer(Subscription subscription, String pulsarTopicName, String consumerName, int index,
+                              OrderedExecutor orderedSendExecutor, ExecutorService ackExecutor, PulsarClient client) {
         this.index = index;
         this.subscription = subscription;
+        this.orderedSendExecutor = orderedSendExecutor;
+        this.ackExecutor = ackExecutor;
+
         try {
-            consumer = PulsarClient.builder()
-                    .serviceUrl("pulsar://localhost:6650")
-                    .authentication(AuthenticationFactory.token("eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJhZG1pbiJ9.HC3JF9HhzUP1nnABqH0NL5Oj7_cs2buz9G5a_Vk710I"))
-                    .operationTimeout(1, TimeUnit.MINUTES)
-                    .connectionsPerBroker(50)
-                    .ioThreads(50)
-                    .listenerThreads(50)
-                    .build()
-                    .newConsumer()
+            consumer = client.newConsumer()
                     .consumerName(consumerName)
                     .topic(pulsarTopicName)
                     .subscriptionName(subscription.getName())

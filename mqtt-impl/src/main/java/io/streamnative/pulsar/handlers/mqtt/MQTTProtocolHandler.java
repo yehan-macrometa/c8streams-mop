@@ -169,7 +169,7 @@ public class MQTTProtocolHandler implements ProtocolHandler {
             .mapToObj(i -> String.format("%s_%d", mqttRealTopicNamePrefix, i))
             .collect(Collectors.toList());
         log.info("List of real topics: {}", String.join(", ", shardIds));
-        return new ConsistentHashSharder(100, shardIds);
+        return new ConsistentHashSharder(1000, shardIds);
     }
 
     @Override

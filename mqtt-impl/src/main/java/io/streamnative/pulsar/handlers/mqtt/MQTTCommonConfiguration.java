@@ -305,6 +305,12 @@ public class MQTTCommonConfiguration extends ServiceConfiguration {
     )
     private String mqttRealTopicNamePrefix = null;
 
+    @FieldContext(
+            category = CATEGORY_MQTT,
+            doc = "Number of threads handling the MQTT consumer path."
+    )
+    private int mqttNumConsumerThreads = 8;
+
     /**
      * Sharder to select the correct shard for the given topics
      */
