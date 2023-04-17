@@ -21,6 +21,7 @@ import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 
 import lombok.extern.slf4j.Slf4j;
+import org.apache.bookkeeper.common.util.OrderedExecutor;
 import org.apache.bookkeeper.mledger.impl.PositionImpl;
 import org.apache.pulsar.broker.PulsarService;
 import org.apache.pulsar.broker.service.BrokerServiceException;
@@ -36,6 +37,10 @@ public abstract class AbstractQosPublishHandler implements QosPublishHandler {
 
     protected final PulsarService pulsarService;
     protected final MQTTServerConfiguration configuration;
+    private  final OrderedExecutor orderedExecutor = OrderedExecutor.newBuilder()
+            .name("mqtt-pulsar-producer")
+                .numThreads(50)
+                .build();
 
     protected AbstractQosPublishHandler(PulsarService pulsarService, MQTTServerConfiguration configuration) {
         this.pulsarService = pulsarService;
@@ -54,13 +59,17 @@ public abstract class AbstractQosPublishHandler implements QosPublishHandler {
 
     protected CompletableFuture<PositionImpl> writeToPulsarTopic(MqttPublishMessage msg) {
         return getTopicReference(msg).thenCompose(topicOp -> {
-            MessageImpl<byte[]> message = toPulsarMsg(msg);
-            CompletableFuture<PositionImpl> pos = topicOp.map(topic ->
-                            MessagePublishContext.publishMessages(message, topic))
-                    .orElseGet(() -> FutureUtil.failedFuture(
-                            new BrokerServiceException.TopicNotFoundException(msg.variableHeader().topicName())));
-            message.release();
-            return pos;
+            CompletableFuture<PositionImpl> future = new CompletableFuture<>();
+            orderedExecutor.executeOrdered(msg.variableHeader().topicName(), () -> {
+                MessageImpl<byte[]> message = toPulsarMsg(msg);
+                CompletableFuture<PositionImpl> pos = topicOp.map(topic ->
+                                MessagePublishContext.publishMessages(message, topic))
+                        .orElseGet(() -> FutureUtil.failedFuture(
+                                new BrokerServiceException.TopicNotFoundException(msg.variableHeader().topicName())));
+                message.release();
+                pos.thenAccept(future::complete);
+            });
+            return future;
         });
     }
 }
