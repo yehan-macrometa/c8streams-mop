@@ -129,7 +129,7 @@ public class MQTTCommonConsumer {
                     try {
                         taskCount.getAndIncrement();
                         orderedSendExecutor.executeOrdered(virtualTopic, () -> {
-                            mqttConsumer.getCnx().ctx().channel().eventLoop().execute(() -> {
+//                            mqttConsumer.getCnx().ctx().channel().eventLoop().execute(() -> {
                                 try {
                                     CompletableFuture<Void> future = new CompletableFuture<>();
                                     futures.add(future);
@@ -158,7 +158,7 @@ public class MQTTCommonConsumer {
                                 } catch (Exception e) {
                                     log.error("Error when handling acknowledgement.", e);
                                 }
-                            });
+//                            });
                         });
                     } catch (Exception e) {
                         log.error("Error when accessing channel executor.", e);
