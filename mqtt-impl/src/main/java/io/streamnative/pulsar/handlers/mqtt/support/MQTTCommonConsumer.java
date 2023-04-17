@@ -155,15 +155,15 @@ public class MQTTCommonConsumer {
 
     public void add(String mqttTopicName, MQTTVirtualConsumer consumer) {
         consumers.computeIfAbsent(mqttTopicName, s -> new CopyOnWriteArrayList<>()).add(consumer);
-        log.info("Add virtual consumer to common #{} for topic {}. left consumers = {}",
-            index, mqttTopicName, consumers.get(mqttTopicName).size());
+        log.info("Add virtual consumer to common #{} for virtual topic = {}, real topic = {}. left consumers = {}",
+            index, mqttTopicName, consumer.getTopicName(), consumers.get(mqttTopicName).size());
     }
 
     public void remove(String mqttTopicName, MQTTVirtualConsumer consumer) {
         if (consumers.containsKey(mqttTopicName)) {
             boolean result = consumers.get(mqttTopicName).remove(consumer);
-            log.info("Try remove({}) virtual consumer from common #{} for topic {}. left consumers = {}",
-                result, index, mqttTopicName, consumers.get(mqttTopicName).size());
+            log.info("Try remove({}) virtual consumer from common #{} for virtual topic = {}, real topic = {}. left consumers = {}",
+                result, index, mqttTopicName, consumer.getTopicName(), consumers.get(mqttTopicName).size());
         }
     }
 
