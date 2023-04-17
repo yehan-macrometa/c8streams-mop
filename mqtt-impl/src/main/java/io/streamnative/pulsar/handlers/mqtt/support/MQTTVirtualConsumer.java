@@ -66,10 +66,6 @@ public class MQTTVirtualConsumer {
         return promise;
     }
 
-    public boolean isActive() {
-        return !cnx.ctx().isRemoved() && cnx.ctx().channel().isActive();
-    }
-
     @Override
     public boolean equals(Object o) {
         return super.equals(o);
@@ -79,6 +75,10 @@ public class MQTTVirtualConsumer {
     @Override
     public int hashCode() {
         return Objects.hash(super.hashCode(), topicName, cnx);
+    }
+
+    public void close() {
+        cnx.ctx().channel().close();
     }
 
 }

@@ -355,23 +355,32 @@ public class DefaultProtocolMethodProcessorImpl implements ProtocolMethodProcess
             CompletableFuture<Void> completableFuture = topicListFuture.thenCompose(topics -> {
                 List<CompletableFuture<Void>> futures = new ArrayList<>();
                 for (String topic : topics) {
-                    CompletableFuture<Void> result = mqttService.getCommonConsumers(topic).thenAccept(commonConsumers -> {
-                        try {
-                            MQTTVirtualConsumer consumer = new MQTTVirtualConsumer(topic, serverCnx,
-                                subTopic.qualityOfService(), packetIdGenerator, subTopic.topicName(), outstandingVirtualPacketContainer);
-                            log.info("MqttVirtualTopics: Registering to common consumer {}", subTopic.topicName());
-                            List<Pair<MQTTCommonConsumer, MQTTVirtualConsumer>> pairs = new ArrayList();
-                            commonConsumers.forEach(commonConsumer -> {
-                                commonConsumer.add(subTopic.topicName(), consumer);
-                                pairs.add(Pair.of(commonConsumer, consumer));
-                            });
-                            topicSubscriptions.putIfAbsent(subTopic.topicName(), pairs);
-                        } catch (Exception e) {
-                            throw new MQTTServerException(e);
-                        }
-                    });
+                    PulsarTopicUtils.getTopicReference(pulsarService, topic, configuration.getDefaultTenant(),
+                        configuration.getDefaultNamespace(), false,
+                        configuration.getDefaultTopicDomain()).thenAccept(topicOp -> {
+                            if (topicOp.isPresent()) {
+                                CompletableFuture<Void> result = mqttService.getCommonConsumers(topic).thenAccept(commonConsumers -> {
+                                    try {
+                                        MQTTVirtualConsumer consumer = new MQTTVirtualConsumer(topic, serverCnx,
+                                            subTopic.qualityOfService(), packetIdGenerator, subTopic.topicName(), outstandingVirtualPacketContainer);
+                                        log.info("MqttVirtualTopics: Registering to common consumer {}", subTopic.topicName());
+                                        List<Pair<MQTTCommonConsumer, MQTTVirtualConsumer>> pairs = new ArrayList();
+                                        commonConsumers.forEach(commonConsumer -> {
+                                            commonConsumer.add(subTopic.topicName(), consumer);
+                                            pairs.add(Pair.of(commonConsumer, consumer));
+                                        });
+                                        topicSubscriptions.putIfAbsent(subTopic.topicName(), pairs);
+                                    } catch (Exception e) {
+                                        throw new MQTTServerException(e);
+                                    }
+                                });
 
-                    futures.add(result);
+                                futures.add(result);
+                            } else {
+                                log.info("[test] topic not on this broker = " + topic);
+                            }
+                        });
+
                 }
                 return FutureUtil.waitForAll(futures);
             });

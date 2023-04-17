@@ -39,6 +39,7 @@ import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -238,7 +239,7 @@ public class MQTTProxyProtocolMethodProcessor implements ProtocolMethodProcessor
         }
         CompletableFuture<List<String>> topicListFuture;
         if (proxyConfig.getSharder() != null) {
-            List<String> topicNames = msg.payload().topicSubscriptions().stream()
+            Set<String> topicNames = msg.payload().topicSubscriptions().stream()
                 .map(s -> {
                     String topic = proxyConfig.getSharder().getShardId(s.topicName());
                     if (log.isDebugEnabled()) {
@@ -247,7 +248,7 @@ public class MQTTProxyProtocolMethodProcessor implements ProtocolMethodProcessor
                     }
                     return topic;
                 })
-                .collect(Collectors.toList());
+                .collect(Collectors.toSet());
 
             topicListFuture = PulsarTopicUtils.asyncGetTopicsForSubscribeMsg(topicNames,
                 proxyConfig.getDefaultTenant(), proxyConfig.getDefaultNamespace(), pulsarService,

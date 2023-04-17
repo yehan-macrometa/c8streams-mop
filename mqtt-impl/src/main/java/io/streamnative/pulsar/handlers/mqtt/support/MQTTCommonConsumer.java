@@ -29,12 +29,15 @@ import org.apache.pulsar.client.api.MessageId;
 import org.apache.pulsar.client.api.PulsarClient;
 import org.apache.pulsar.client.api.PulsarClientException;
 import org.apache.pulsar.client.api.SubscriptionInitialPosition;
+import org.apache.pulsar.client.api.SubscriptionType;
 import org.apache.pulsar.common.api.proto.CommandAck;
 
 import java.nio.charset.StandardCharsets;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.ExecutorService;
@@ -46,6 +49,7 @@ import java.util.concurrent.ExecutorService;
 public class MQTTCommonConsumer {
     @Getter
     private final Subscription subscription;
+    @Getter
     private Map<String, List<MQTTVirtualConsumer>> consumers = new ConcurrentHashMap<>();
     private PacketIdGenerator packetIdGenerator = PacketIdGenerator.newNonZeroGenerator();
     @Getter
@@ -66,6 +70,7 @@ public class MQTTCommonConsumer {
                     .consumerName(consumerName)
                     .topic(pulsarTopicName)
                     .subscriptionName(subscription.getName())
+                    .subscriptionType(SubscriptionType.Shared)
                     .subscriptionInitialPosition(SubscriptionInitialPosition.Earliest)
                     .messageListener(this::sendMessages)
                     .receiverQueueSize(100_000)
@@ -147,6 +152,9 @@ public class MQTTCommonConsumer {
                         }
                     });
                 });
+            } else {
+                log.info("[test] Common consumer = " + consumer.getTopic() + ", virtual topic = " + virtualTopic +
+                    " is not connected  " + (msg.getData() != null ? new String(msg.getData()) : "<empty>"));
             }
         } catch (Exception e) {
             log.warn("An error occurred while processing sendMessage. {}", e.getMessage());
@@ -193,5 +201,21 @@ public class MQTTCommonConsumer {
         getSubscription().acknowledgeMessage(
                 Collections.singletonList(PositionImpl.get(ledgerId, entryId)),
                 CommandAck.AckType.Individual, Collections.emptyMap());
+    }
+
+    public void close() {
+        Set<Map.Entry<String, List<MQTTVirtualConsumer>>> consumersSet = consumers.entrySet();
+        // close virtual consumers
+        for (Map.Entry<String, List<MQTTVirtualConsumer>> entry : consumersSet) {
+            for (MQTTVirtualConsumer virtualConsumer: entry.getValue()) {
+                virtualConsumer.close();
+            }
+        }
+        // close common consumer
+        try {
+            consumer.close();
+        } catch (PulsarClientException e) {
+            log.warn("Failed to close common consumer for pulsar topic = {}", consumer.getTopic(), e);
+        }
     }
 }
