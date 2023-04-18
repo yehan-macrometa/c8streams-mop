@@ -13,21 +13,21 @@
  */
 package io.streamnative.pulsar.handlers.mqtt;
 
-import static io.streamnative.pulsar.handlers.mqtt.utils.PulsarMessageConverter.toPulsarMsg;
 import io.netty.handler.codec.mqtt.MqttPublishMessage;
-import io.streamnative.pulsar.handlers.mqtt.utils.MessagePublishContext;
+import io.streamnative.pulsar.handlers.mqtt.support.MQTTPublisherContext;
 import io.streamnative.pulsar.handlers.mqtt.utils.PulsarTopicUtils;
-import java.util.Optional;
-import java.util.concurrent.CompletableFuture;
-
 import lombok.extern.slf4j.Slf4j;
-import org.apache.bookkeeper.common.util.OrderedExecutor;
-import org.apache.bookkeeper.mledger.impl.PositionImpl;
 import org.apache.pulsar.broker.PulsarService;
 import org.apache.pulsar.broker.service.BrokerServiceException;
 import org.apache.pulsar.broker.service.Topic;
+import org.apache.pulsar.client.api.MessageId;
 import org.apache.pulsar.client.impl.MessageImpl;
 import org.apache.pulsar.common.util.FutureUtil;
+
+import java.util.Optional;
+import java.util.concurrent.CompletableFuture;
+
+import static io.streamnative.pulsar.handlers.mqtt.utils.PulsarMessageConverter.toPulsarMsg;
 
 /**
  * Abstract class for publish handler.
@@ -37,12 +37,10 @@ public abstract class AbstractQosPublishHandler implements QosPublishHandler {
 
     protected final PulsarService pulsarService;
     protected final MQTTServerConfiguration configuration;
-    private final OrderedExecutor orderedExecutor;
 
     protected AbstractQosPublishHandler(PulsarService pulsarService, MQTTServerConfiguration configuration) {
         this.pulsarService = pulsarService;
         this.configuration = configuration;
-        this.orderedExecutor = configuration.getOrderedPublishExecutor();
     }
 
     protected CompletableFuture<Optional<Topic>> getTopicReference(MqttPublishMessage msg) {
@@ -55,18 +53,14 @@ public abstract class AbstractQosPublishHandler implements QosPublishHandler {
                 , configuration.getDefaultTopicDomain());
     }
 
-    protected CompletableFuture<PositionImpl> writeToPulsarTopic(MqttPublishMessage msg) {
+    protected CompletableFuture<MessageId> writeToPulsarTopic(MqttPublishMessage msg) {
         return getTopicReference(msg).thenCompose(topicOp -> {
-            CompletableFuture<PositionImpl> future = new CompletableFuture<>();
-            orderedExecutor.executeOrdered(msg.variableHeader().topicName(), () -> {
-                MessageImpl<byte[]> message = toPulsarMsg(msg);
-                CompletableFuture<PositionImpl> pos = topicOp.map(topic ->
-                                MessagePublishContext.publishMessages(message, topic))
-                        .orElseGet(() -> FutureUtil.failedFuture(
-                                new BrokerServiceException.TopicNotFoundException(msg.variableHeader().topicName())));
-                message.release();
-                pos.thenAccept(future::complete);
-            });
+            MessageImpl<byte[]> message = toPulsarMsg(msg);
+            CompletableFuture<MessageId> future = topicOp.map(topic ->
+                            MQTTPublisherContext.publishMessages(message, topic.getName()))
+                    .orElseGet(() -> FutureUtil.failedFuture(
+                            new BrokerServiceException.TopicNotFoundException(msg.variableHeader().topicName())));
+            message.release();
             return future;
         });
     }

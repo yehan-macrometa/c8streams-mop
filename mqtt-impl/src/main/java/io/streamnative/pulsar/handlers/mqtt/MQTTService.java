@@ -16,6 +16,7 @@ package io.streamnative.pulsar.handlers.mqtt;
 import io.streamnative.pulsar.handlers.mqtt.support.MQTTCommonConsumer;
 import io.streamnative.pulsar.handlers.mqtt.support.MQTTMetricsCollector;
 import io.streamnative.pulsar.handlers.mqtt.support.MQTTMetricsProvider;
+import io.streamnative.pulsar.handlers.mqtt.support.MQTTPublisherContext;
 import io.streamnative.pulsar.handlers.mqtt.utils.PulsarTopicUtils;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
@@ -92,6 +93,7 @@ public class MQTTService {
                 .maxTasksInQueue(100_000)
                 .build();
         ackExecutor = Executors.newWorkStealingPool(numThreads);
+        MQTTPublisherContext.init(brokerService, serverConfiguration);
 
         try {
             client = PulsarClient.builder()
