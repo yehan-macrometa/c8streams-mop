@@ -14,7 +14,6 @@
 package io.streamnative.pulsar.handlers.mqtt.support;
 
 import io.netty.buffer.Unpooled;
-import io.netty.channel.ChannelPromise;
 import io.netty.handler.codec.mqtt.MqttPublishMessage;
 import io.netty.handler.codec.mqtt.MqttQoS;
 import io.netty.util.internal.StringUtil;
@@ -24,7 +23,6 @@ import lombok.extern.slf4j.Slf4j;
 import org.apache.bookkeeper.common.util.OrderedExecutor;
 import org.apache.bookkeeper.mledger.impl.PositionImpl;
 import org.apache.pulsar.broker.service.Subscription;
-import org.apache.pulsar.client.api.AuthenticationFactory;
 import org.apache.pulsar.client.api.Consumer;
 import org.apache.pulsar.client.api.Message;
 import org.apache.pulsar.client.api.MessageId;
@@ -33,18 +31,12 @@ import org.apache.pulsar.client.api.PulsarClientException;
 import org.apache.pulsar.client.api.SubscriptionInitialPosition;
 import org.apache.pulsar.common.api.proto.CommandAck;
 
-import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.Semaphore;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * MQTT consumer.
@@ -75,7 +67,7 @@ public class MQTTCommonConsumer {
                     .subscriptionName(subscription.getName())
                     .subscriptionInitialPosition(SubscriptionInitialPosition.Earliest)
                     .messageListener(this::sendMessages)
-                    .receiverQueueSize(100000)
+                    .receiverQueueSize(100_000)
                     .subscribe();;
         } catch (PulsarClientException e) {
             log.error("Could not create common consumer.", e);
@@ -101,12 +93,7 @@ public class MQTTCommonConsumer {
 
     private void sendMessages(Consumer<byte[]> consumer, Message<byte[]> msg) {
         try {
-            AtomicInteger taskCount = new AtomicInteger();
-            Semaphore semaphore = new Semaphore(0);
-            List<CompletableFuture<Void>> futures = new ArrayList<>();
-
             int packetId = packetIdGenerator.nextPacketId();
-
             String virtualTopic = msg.getProperty("virtualTopic");
 
             if (StringUtil.isNullOrEmpty(virtualTopic)) {
@@ -118,7 +105,6 @@ public class MQTTCommonConsumer {
 
             if (topicConsumers != null && topicConsumers.size() > 0) {
                 topicConsumers.forEach(mqttConsumer -> {
-
                     MqttPublishMessage message = MessageBuilder.publish()
                             .messageId(packetId)
                             .payload(Unpooled.copiedBuffer(msg.getData()))
@@ -126,53 +112,41 @@ public class MQTTCommonConsumer {
                             .qos(mqttConsumer.getQos())
                             .retained(false)
                             .build();
-                    try {
-                        taskCount.getAndIncrement();
-                        orderedSendExecutor.executeOrdered(virtualTopic, () -> {
-//                            mqttConsumer.getCnx().ctx().channel().eventLoop().execute(() -> {
-                                try {
-                                    CompletableFuture<Void> future = new CompletableFuture<>();
-                                    futures.add(future);
 
-                                    ChannelPromise promise = mqttConsumer.sendMessage(message, packetId, msg.getMessageId());
-                                    promise.addListener(f -> {
-                                        if (!f.isSuccess()) {
-                                            log.warn("Could not send message. {}", f.cause() != null ? f.cause().getMessage() : "");
-                                        }
-                                        future.complete(null);
-                                    });
-                                } catch (Exception e) {
-                                    // TODO: We need to fix each issue possible.
-                                    // But we cannot allow one consumer to stop sending messages to all other consumers.
-                                    // A crash here does that.
-                                    // So have to catch it.
-                                    log.warn("[{}] Could not send the message to consumer {}.", consumer.getConsumerName(), mqttConsumer.getConsumerName(), e);
-                                } finally {
-                                    semaphore.release();
-                                }
+                    orderedSendExecutor.executeOrdered(virtualTopic, () -> {
+                        try {
+                            // TODO: Use the Promise returned by sendMessage
+                            // It is better to wait until the previous write is completed to write to the same channel
+                            // again. We need to use the Promise returned by sendMessage method and wait until it
+                            // completes to send a new message to this same virtualTopic.
+                            //
+                            // Idea:
+                            // We can keep this Promise and attach a list of message to it. When there is a new message
+                            // to the same virtualTopic, if the previous Promise is not completed, we can queue this
+                            // new message in that attached list and skip calling the sendMessage. Whenever this Promise
+                            // completes, we can resubmit these messages via this.sendMessage method or
+                            // orderedSendExecutor.executeOrdered method.
+                            mqttConsumer.sendMessage(message, packetId, msg.getMessageId());
+                        } catch (Exception e) {
+                            // TODO: We need to fix each issue possible.
+                            // But we cannot allow one consumer to stop sending messages to all other consumers.
+                            // A crash here does that.
+                            // So have to catch it.
+                            log.warn("[{}] Could not send the message to consumer {}.", consumer.getConsumerName(), mqttConsumer.getConsumerName(), e);
+                        }
 
-                                try {
-                                    if (mqttConsumer.getQos() == MqttQoS.AT_MOST_ONCE) {
-                                        consumer.acknowledge(msg);
-                                    }
-                                } catch (Exception e) {
-                                    log.error("Error when handling acknowledgement.", e);
-                                }
-//                            });
-                        });
-                    } catch (Exception e) {
-                        log.error("Error when accessing channel executor.", e);
-                    }
+                        try {
+                            if (mqttConsumer.getQos() == MqttQoS.AT_MOST_ONCE) {
+                                consumer.acknowledge(msg);
+                            }
+                        } catch (Exception e) {
+                            log.error("Error when handling acknowledgement.", e);
+                        }
+                    });
                 });
             }
-
-            try {
-                semaphore.acquire(taskCount.get());
-            } catch (Exception e) {
-                log.error("Could not wait for permits.", e);
-            }
         } catch (Exception e) {
-            log.warn("Send messages failed. {}", e.getMessage());
+            log.warn("An error occurred while processing sendMessage. {}", e.getMessage());
         }
     }
 

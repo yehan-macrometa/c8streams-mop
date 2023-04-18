@@ -89,6 +89,7 @@ public class MQTTService {
         orderedSendExecutor = OrderedExecutor.newBuilder()
                 .name("mqtt-common-consumer-send")
                 .numThreads(numThreads)
+                .maxTasksInQueue(100_000)
                 .build();
         ackExecutor = Executors.newWorkStealingPool(numThreads);
 
