@@ -21,6 +21,7 @@ import java.util.Set;
 import io.streamnative.pulsar.handlers.mqtt.sharding.Sharder;
 import lombok.Getter;
 import lombok.Setter;
+import org.apache.bookkeeper.common.util.OrderedExecutor;
 import org.apache.pulsar.broker.ServiceConfiguration;
 import org.apache.pulsar.common.configuration.Category;
 import org.apache.pulsar.common.configuration.FieldContext;
@@ -315,5 +316,10 @@ public class MQTTCommonConfiguration extends ServiceConfiguration {
      * Sharder to select the correct shard for the given topics
      */
     private Sharder sharder;
+
+    /**
+     * Executor responsible for publishing messages
+     */
+    private OrderedExecutor orderedPublishExecutor;
 
 }

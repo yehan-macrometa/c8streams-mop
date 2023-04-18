@@ -36,6 +36,7 @@ import java.util.stream.IntStream;
 
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.bookkeeper.common.util.OrderedExecutor;
 import org.apache.pulsar.broker.ServiceConfiguration;
 import org.apache.pulsar.broker.ServiceConfigurationUtils;
 import org.apache.pulsar.broker.protocol.ProtocolHandler;
@@ -81,6 +82,10 @@ public class MQTTProtocolHandler implements ProtocolHandler {
             mqttConfig = ConfigurationUtils.create(conf.getProperties(), MQTTServerConfiguration.class);
         }
         mqttConfig.setSharder(initSharder(mqttConfig.getMqttRealTopicNamePrefix(), mqttConfig.getMqttRealTopicCount()));
+        mqttConfig.setOrderedPublishExecutor(OrderedExecutor.newBuilder()
+                .name("mqtt-pulsar-producer")
+                .numThreads(50)
+                .build());
         this.bindAddress = ServiceConfigurationUtils.getDefaultOrConfiguredAddress(mqttConfig.getBindAddress());
     }
 

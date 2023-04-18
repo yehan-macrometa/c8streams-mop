@@ -37,14 +37,12 @@ public abstract class AbstractQosPublishHandler implements QosPublishHandler {
 
     protected final PulsarService pulsarService;
     protected final MQTTServerConfiguration configuration;
-    private  final OrderedExecutor orderedExecutor = OrderedExecutor.newBuilder()
-            .name("mqtt-pulsar-producer")
-                .numThreads(50)
-                .build();
+    private final OrderedExecutor orderedExecutor;
 
     protected AbstractQosPublishHandler(PulsarService pulsarService, MQTTServerConfiguration configuration) {
         this.pulsarService = pulsarService;
         this.configuration = configuration;
+        this.orderedExecutor = configuration.getOrderedPublishExecutor();
     }
 
     protected CompletableFuture<Optional<Topic>> getTopicReference(MqttPublishMessage msg) {
