@@ -18,6 +18,9 @@ import io.netty.handler.codec.mqtt.MqttSubscribeMessage;
 import io.netty.handler.codec.mqtt.MqttTopicSubscription;
 import io.streamnative.pulsar.handlers.mqtt.TopicFilter;
 import io.streamnative.pulsar.handlers.mqtt.TopicFilterImpl;
+
+import java.net.InetSocketAddress;
+import java.net.URI;
 import java.net.URLDecoder;
 import java.net.URLEncoder;
 import java.util.ArrayList;
@@ -63,6 +66,28 @@ public class PulsarTopicUtils {
         return pulsarService.getNamespaceService().getBrokerServiceUrlAsync(topic,
                 LookupOptions.builder().authoritative(false).loadTopicsInBundle(false).build())
                 .thenCompose(lookupOp -> pulsarService.getBrokerService().getTopic(topic.toString(), true));
+    }
+
+    public static CompletableFuture<Optional<InetSocketAddress>> getBrokerUrl(PulsarService pulsarService, String topicName,
+                                                                              String defaultTenant, String defaultNamespace, boolean encodeTopicName, String defaultTopicDomain) {
+        final TopicName topic;
+        try {
+            topic = TopicName.get(getPulsarTopicName(topicName, defaultTenant, defaultNamespace, encodeTopicName,
+                TopicDomain.getEnum(defaultTopicDomain)));
+        } catch (Exception e) {
+            return FutureUtil.failedFuture(e);
+        }
+        return pulsarService.getNamespaceService().getBrokerServiceUrlAsync(topic,
+                LookupOptions.builder().authoritative(false).loadTopicsInBundle(false).build())
+            .thenApply(lookupOp ->
+                lookupOp.map(r -> {
+                    try {
+                        URI uri = new URI(r.getLookupData().getBrokerUrl());
+                        return InetSocketAddress.createUnresolved(uri.getHost(), uri.getPort());
+                    } catch (Exception e) {
+                        return null;
+                    }
+                }));
     }
 
     public static CompletableFuture<Optional<Boolean>> isTopicRedirect(PulsarService pulsarService, String topicName,

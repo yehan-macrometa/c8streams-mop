@@ -348,23 +348,33 @@ public class DefaultProtocolMethodProcessorImpl implements ProtocolMethodProcess
         List<CompletableFuture<Void>> futureList = new ArrayList<>(subTopics.size());
         Map<String, List<Pair<MQTTCommonConsumer, MQTTVirtualConsumer>>> topicSubscriptions = new ConcurrentHashMap<>();
         for (MqttTopicSubscription subTopic : subTopics) {
-            String topic = subTopic.topicName();
-            CompletableFuture<Void> result = mqttService.getCommonConsumers(topic).thenAccept(commonConsumers -> {
-                try {
-                    MQTTVirtualConsumer consumer = new MQTTVirtualConsumer(topic, serverCnx,
-                        subTopic.qualityOfService(), packetIdGenerator, subTopic.topicName(), outstandingVirtualPacketContainer);
-                    log.info("MqttVirtualTopics: Registering to common consumer {}", subTopic.topicName());
-                    List<Pair<MQTTCommonConsumer, MQTTVirtualConsumer>> pairs = new ArrayList();
-                    commonConsumers.forEach(commonConsumer -> {
-                        commonConsumer.add(subTopic.topicName(), consumer);
-                        pairs.add(Pair.of(commonConsumer, consumer));
+            CompletableFuture<List<String>> topicListFuture = PulsarTopicUtils.asyncGetTopicListFromTopicSubscription(
+                subTopic.topicName(), configuration.getDefaultTenant(), configuration.getDefaultNamespace(),
+                pulsarService, configuration.getDefaultTopicDomain());
+            CompletableFuture<Void> completableFuture = topicListFuture.thenCompose(topics -> {
+                List<CompletableFuture<Void>> futures = new ArrayList<>();
+                for (String topic : topics) {
+                    CompletableFuture<Void> future = mqttService.getCommonConsumers(topic).thenAccept(commonConsumers -> {
+                        try {
+                            MQTTVirtualConsumer consumer = new MQTTVirtualConsumer(topic, serverCnx,
+                                subTopic.qualityOfService(), packetIdGenerator, subTopic.topicName(), outstandingVirtualPacketContainer);
+                            log.info("MqttVirtualTopics: Registering to common consumer {}", subTopic.topicName());
+                            List<Pair<MQTTCommonConsumer, MQTTVirtualConsumer>> pairs = new ArrayList();
+                            commonConsumers.forEach(commonConsumer -> {
+                                commonConsumer.add(subTopic.topicName(), consumer);
+                                pairs.add(Pair.of(commonConsumer, consumer));
+                            });
+                            topicSubscriptions.putIfAbsent(subTopic.topicName(), pairs);
+                        } catch (Exception e) {
+                            throw new MQTTServerException(e);
+                        }
                     });
-                    topicSubscriptions.putIfAbsent(subTopic.topicName(), pairs);
-                } catch (Exception e) {
-                    throw new MQTTServerException(e);
+                    futures.add(future);
                 }
+                return FutureUtil.waitForAll(futures);
             });
-            futureList.add(result);
+
+            futureList.add(completableFuture);
         }
 
         if (futureList.isEmpty()) {
