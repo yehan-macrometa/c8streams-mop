@@ -348,61 +348,47 @@ public class DefaultProtocolMethodProcessorImpl implements ProtocolMethodProcess
         List<CompletableFuture<Void>> futureList = new ArrayList<>(subTopics.size());
         Map<String, List<Pair<MQTTCommonConsumer, MQTTVirtualConsumer>>> topicSubscriptions = new ConcurrentHashMap<>();
         for (MqttTopicSubscription subTopic : subTopics) {
-
-            CompletableFuture<List<String>> topicListFuture = PulsarTopicUtils.asyncGetTopicListFromTopicSubscription(
-                subTopic.topicName(), configuration.getDefaultTenant(), configuration.getDefaultNamespace(),
-                pulsarService, configuration.getDefaultTopicDomain());
-            CompletableFuture<Void> completableFuture = topicListFuture.thenCompose(topics -> {
-                List<CompletableFuture<Void>> futures = new ArrayList<>();
-                for (String topic : topics) {
-                    PulsarTopicUtils.getTopicReference(pulsarService, topic, configuration.getDefaultTenant(),
-                        configuration.getDefaultNamespace(), false,
-                        configuration.getDefaultTopicDomain()).thenAccept(topicOp -> {
-                            if (topicOp.isPresent()) {
-                                CompletableFuture<Void> result = mqttService.getCommonConsumers(topic).thenAccept(commonConsumers -> {
-                                    try {
-                                        MQTTVirtualConsumer consumer = new MQTTVirtualConsumer(topic, serverCnx,
-                                            subTopic.qualityOfService(), packetIdGenerator, subTopic.topicName(), outstandingVirtualPacketContainer);
-                                        log.info("MqttVirtualTopics: Registering to common consumer {}", subTopic.topicName());
-                                        List<Pair<MQTTCommonConsumer, MQTTVirtualConsumer>> pairs = new ArrayList();
-                                        commonConsumers.forEach(commonConsumer -> {
-                                            commonConsumer.add(subTopic.topicName(), consumer);
-                                            pairs.add(Pair.of(commonConsumer, consumer));
-                                        });
-                                        topicSubscriptions.putIfAbsent(subTopic.topicName(), pairs);
-                                    } catch (Exception e) {
-                                        throw new MQTTServerException(e);
-                                    }
-                                });
-
-                                futures.add(result);
-                            } else {
-                                log.info("[test] topic not on this broker = " + topic);
-                            }
-                        });
-
+            String topic = subTopic.topicName();
+            CompletableFuture<Void> result = mqttService.getCommonConsumers(topic).thenAccept(commonConsumers -> {
+                try {
+                    MQTTVirtualConsumer consumer = new MQTTVirtualConsumer(topic, serverCnx,
+                        subTopic.qualityOfService(), packetIdGenerator, subTopic.topicName(), outstandingVirtualPacketContainer);
+                    log.info("MqttVirtualTopics: Registering to common consumer {}", subTopic.topicName());
+                    List<Pair<MQTTCommonConsumer, MQTTVirtualConsumer>> pairs = new ArrayList();
+                    commonConsumers.forEach(commonConsumer -> {
+                        commonConsumer.add(subTopic.topicName(), consumer);
+                        pairs.add(Pair.of(commonConsumer, consumer));
+                    });
+                    topicSubscriptions.putIfAbsent(subTopic.topicName(), pairs);
+                } catch (Exception e) {
+                    throw new MQTTServerException(e);
                 }
-                return FutureUtil.waitForAll(futures);
             });
-            futureList.add(completableFuture);
-
+            futureList.add(result);
         }
-        FutureUtil.waitForAll(futureList).thenAccept(v -> {
-            MqttSubAckMessage ackMessage = createSubAckMessage(subTopics, messageID);
-            if (log.isDebugEnabled()) {
-                log.debug("Sending SUB-ACK message {} to {}", ackMessage, clientID);
-            }
-            channel.writeAndFlush(ackMessage);
-            Map<String, List<Pair<MQTTCommonConsumer, MQTTVirtualConsumer>>> existedSubscriptions = NettyUtils.getTopicSubscriptions(channel);
-            if (existedSubscriptions != null) {
-                topicSubscriptions.putAll(existedSubscriptions);
-            }
-            NettyUtils.setTopicSubscriptions(channel, topicSubscriptions);
-        }).exceptionally(e -> {
-            log.error("[{}] Failed to process MQTT subscribe.", clientID, e);
+
+        if (futureList.isEmpty()) {
+            log.info("[{}] This broker doesn't include topics from MQTT subscribe message.", clientID);
             channel.close();
-            return null;
-        });
+        } else {
+            FutureUtil.waitForAll(futureList).thenAccept(v -> {
+                MqttSubAckMessage ackMessage = createSubAckMessage(subTopics, messageID);
+                if (log.isDebugEnabled()) {
+                    log.debug("Sending SUB-ACK message {} to {}", ackMessage, clientID);
+                }
+                channel.writeAndFlush(ackMessage);
+                Map<String, List<Pair<MQTTCommonConsumer, MQTTVirtualConsumer>>> existedSubscriptions = NettyUtils.getTopicSubscriptions(channel);
+                if (existedSubscriptions != null) {
+                    topicSubscriptions.putAll(existedSubscriptions);
+                }
+                NettyUtils.setTopicSubscriptions(channel, topicSubscriptions);
+            }).exceptionally(e -> {
+                log.error("[{}] Failed to process MQTT subscribe.", clientID, e);
+                channel.close();
+                return null;
+            });
+        }
+
     }
 
     @Override

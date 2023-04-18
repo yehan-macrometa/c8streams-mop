@@ -143,6 +143,11 @@ public class MQTTService {
                                 .getOrCreateSubscription(pulsarService, realTopicName, "commonSub",
                                         serverConfiguration.getDefaultTenant(), serverConfiguration.getDefaultNamespace(),
                                         serverConfiguration.getDefaultTopicDomain()).get();
+                        sub.getConsumers().forEach(c -> {
+                            //old consumers should be disconnected.
+                            log.warn("[test] A real topic = {} has as an old consumer. disconnecting it..", realTopicName);
+                            c.disconnect();
+                        });
                     } catch (Exception e) {
                         future.completeExceptionally(e);
                         throw new RuntimeException("Failed to create `commonSub` subscription for real topic = " + realTopicName, e);
