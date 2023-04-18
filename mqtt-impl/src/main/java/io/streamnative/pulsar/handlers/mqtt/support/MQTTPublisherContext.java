@@ -67,8 +67,9 @@ public class MQTTPublisherContext {
                 .topic(t)
                 .blockIfQueueFull(true)
                 .sendTimeout(1, TimeUnit.MINUTES)
-                .maxPendingMessages(1000)
+                .maxPendingMessages(100_000)
                 .batchingMaxMessages(1000)
+                .batchingMaxPublishDelay(10, TimeUnit.MILLISECONDS)
                 .createAsync());
     }
 }
