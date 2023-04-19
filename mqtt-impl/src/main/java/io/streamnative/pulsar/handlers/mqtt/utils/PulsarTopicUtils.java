@@ -82,6 +82,7 @@ public class PulsarTopicUtils {
             .thenApply(lookupOp ->
                 lookupOp.map(r -> {
                     try {
+                        // always use plain(not TLS) url
                         URI uri = new URI(r.getLookupData().getBrokerUrl());
                         return InetSocketAddress.createUnresolved(uri.getHost(), uri.getPort());
                     } catch (Exception e) {

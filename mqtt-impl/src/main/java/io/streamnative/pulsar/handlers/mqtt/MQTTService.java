@@ -28,6 +28,9 @@ import org.apache.pulsar.broker.service.BrokerService;
 import org.apache.pulsar.broker.service.Subscription;
 import org.apache.pulsar.client.api.PulsarClient;
 import org.apache.pulsar.client.api.PulsarClientException;
+import org.apache.pulsar.common.naming.NamespaceBundleFactory;
+import org.apache.pulsar.common.naming.NamespaceName;
+import org.apache.pulsar.metadata.api.Notification;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -40,6 +43,8 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
+
+import static org.apache.pulsar.broker.cache.LocalZooKeeperCacheService.LOCAL_POLICIES_ROOT;
 
 /**
  * Main class for mqtt service.
@@ -100,6 +105,11 @@ public class MQTTService {
                 .maxTasksInQueue(100_000)
                 .build();
         ackExecutor = Executors.newWorkStealingPool(numThreads);
+
+
+        pulsarService.getLocalMetadataStore().registerListener(this::handleMetadataStoreNotification);
+
+
         MQTTPublisherContext.init(brokerService, serverConfiguration);
 
         try {
@@ -180,33 +190,46 @@ public class MQTTService {
 
         @Override
         public void run() {
-            try {
-                Set<Map.Entry<String, List<MQTTCommonConsumer>>> entries = commonConsumersMap.entrySet();
-                for (Map.Entry<String, List<MQTTCommonConsumer>> entry : entries) {
-                    Optional<Boolean> redirectOp;
-                    try {
-                        redirectOp = PulsarTopicUtils.isTopicRedirect(pulsarService, entry.getKey(),
-                            serverConfiguration.getDefaultTenant(), serverConfiguration.getDefaultNamespace(), true
-                            , serverConfiguration.getDefaultTopicDomain()).get();
-                    } catch (Exception e) {
-                        log.warn("Failed lookup for a pulsar topic = " + entry.getKey(), e);
-                        continue;
-                    }
+            checkAndCloseCommonConsumers();
+        }
+    }
 
-                    if (!redirectOp.isPresent() || redirectOp.get() ||
-                        entry.getValue().isEmpty() || entry.getValue().get(0).getConsumers().isEmpty()) {
-                        log.info("[test] Remove a common consumers for pulsar topic = {}", entry.getKey());
-                        for (MQTTCommonConsumer commonConsumer : entry.getValue()) {
-                            commonConsumer.close();
-                        }
-                        commonConsumersMap.remove(entry.getKey());
-                    } else {
-                        log.info("[test] pulsar topic  = {} on this broker", entry.getKey());
-                    }
+    private void handleMetadataStoreNotification(Notification n) {
+        if (n.getPath().startsWith(LOCAL_POLICIES_ROOT)) {
+            final NamespaceName namespace = NamespaceName.get(NamespaceBundleFactory.getNamespaceFromPoliciesPath(n.getPath()));
+            log.info("[test] Policy updated for namespace {}, refreshing the common consumers.", namespace);
+
+            checkAndCloseCommonConsumers();
+
+        }
+    }
+
+    private void checkAndCloseCommonConsumers() {
+        try {
+            Set<Map.Entry<String, List<MQTTCommonConsumer>>> entries = commonConsumersMap.entrySet();
+            for (Map.Entry<String, List<MQTTCommonConsumer>> entry : entries) {
+                Optional<Boolean> redirectOp;
+                try {
+                    redirectOp = PulsarTopicUtils.isTopicRedirect(pulsarService, entry.getKey(),
+                        serverConfiguration.getDefaultTenant(), serverConfiguration.getDefaultNamespace(), true
+                        , serverConfiguration.getDefaultTopicDomain()).get();
+                } catch (Exception e) {
+                    log.warn("Failed lookup for a pulsar topic = " + entry.getKey(), e);
+                    continue;
                 }
-            } catch (Exception e) {
-                log.warn("[test] ", e);
+                log.info("[test] Common consumers for pulsar topic = {} res = {}", entry.getKey(), redirectOp.toString());
+                if (!redirectOp.isPresent() || redirectOp.get()) {
+                    log.info("[test] Remove a common consumers for pulsar topic = {}", entry.getKey());
+                    for (MQTTCommonConsumer commonConsumer : entry.getValue()) {
+                        commonConsumer.close();
+                    }
+                    commonConsumersMap.remove(entry.getKey());
+                } else {
+                    log.info("[test] pulsar topic  = {} on this broker", entry.getKey());
+                }
             }
+        } catch (Exception e) {
+            log.warn("[test] ", e);
         }
     }
 }

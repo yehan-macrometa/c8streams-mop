@@ -74,7 +74,7 @@ public class MQTTCommonConsumer {
                     .subscriptionInitialPosition(SubscriptionInitialPosition.Earliest)
                     .messageListener(this::sendMessages)
                     .receiverQueueSize(100_000)
-                    .subscribe();;
+                    .subscribe();
         } catch (PulsarClientException e) {
             log.error("Could not create common consumer.", e);
         }

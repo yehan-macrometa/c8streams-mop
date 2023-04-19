@@ -64,7 +64,7 @@ public class PulsarServiceLookupHandler implements LookupHandler {
         CompletableFuture<InetSocketAddress> lookupResult = new CompletableFuture<>();
         /*CompletableFuture<Pair<InetSocketAddress, InetSocketAddress>> lookup =
                 pulsarClient.getLookup().getBroker(topicName);*/
-        // more efficient lookup then `pulsarClient.getLookup().getBroker(topicName);` because calls internally
+        // more efficient lookup than `pulsarClient.getLookup().getBroker(topicName);` because calls internally
         CompletableFuture<Optional<InetSocketAddress>> brokerUrl = PulsarTopicUtils.getBrokerUrl(pulsarService, topicName.getLocalName(), proxyConfig.getDefaultTenant(),
             proxyConfig.getDefaultNamespace(), false,
             proxyConfig.getDefaultTopicDomain());
