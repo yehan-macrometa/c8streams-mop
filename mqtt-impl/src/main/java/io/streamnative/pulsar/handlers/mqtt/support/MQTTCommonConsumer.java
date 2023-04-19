@@ -47,8 +47,8 @@ import java.util.concurrent.ExecutorService;
  */
 @Slf4j
 public class MQTTCommonConsumer {
-    @Getter
-    private final Subscription subscription;
+    /*@Getter
+    private final Subscription subscription;*/
     @Getter
     private Map<String, List<MQTTVirtualConsumer>> consumers = new ConcurrentHashMap<>();
     private PacketIdGenerator packetIdGenerator = PacketIdGenerator.newNonZeroGenerator();
@@ -58,10 +58,10 @@ public class MQTTCommonConsumer {
     private final ExecutorService ackExecutor;
     private Consumer<byte[]> consumer;
 
-    public MQTTCommonConsumer(Subscription subscription, String pulsarTopicName, String consumerName, int index,
+    public MQTTCommonConsumer(/*Subscription subscription, */String pulsarTopicName, String consumerName, int index,
                               OrderedExecutor orderedSendExecutor, ExecutorService ackExecutor, PulsarClient client) {
         this.index = index;
-        this.subscription = subscription;
+        /*this.subscription = subscription;*/
         this.orderedSendExecutor = orderedSendExecutor;
         this.ackExecutor = ackExecutor;
 
@@ -69,7 +69,7 @@ public class MQTTCommonConsumer {
             consumer = client.newConsumer()
                     .consumerName(consumerName)
                     .topic(pulsarTopicName)
-                    .subscriptionName(subscription.getName())
+                    .subscriptionName("commonSub")
                     .subscriptionType(SubscriptionType.Shared)
                     .subscriptionInitialPosition(SubscriptionInitialPosition.Earliest)
                     .messageListener(this::sendMessages)
@@ -164,25 +164,25 @@ public class MQTTCommonConsumer {
     public void add(String mqttTopicName, MQTTVirtualConsumer consumer) {
         consumers.computeIfAbsent(mqttTopicName, s -> new CopyOnWriteArrayList<>()).add(consumer);
         log.info("Add virtual consumer to common #{} for virtual topic = {}, real topic = {}. left consumers = {}",
-            index, mqttTopicName, consumer.getTopicName(), consumers.get(mqttTopicName).size());
+            index, mqttTopicName, this.consumer.getTopic(), consumers.get(mqttTopicName).size());
     }
 
     public void remove(String mqttTopicName, MQTTVirtualConsumer consumer) {
         if (consumers.containsKey(mqttTopicName)) {
             boolean result = consumers.get(mqttTopicName).remove(consumer);
             log.info("Try remove({}) virtual consumer from common #{} for virtual topic = {}, real topic = {}. left consumers = {}",
-                result, index, mqttTopicName, consumer.getTopicName(), consumers.get(mqttTopicName).size());
+                result, index, mqttTopicName, this.consumer.getTopic(), consumers.get(mqttTopicName).size());
         }
     }
 
-    public void acknowledgeMessage(long ledgerId, long entryId, MessageId messageId) {
+    public void acknowledgeMessage(/*long ledgerId, long entryId, */MessageId messageId) {
         ackExecutor.submit(() -> {
             try {
-                if (messageId == null) {
+                /*if (messageId == null) {
                     ack(ledgerId, entryId);
-                } else {
+                } else {*/
                     ack(messageId);
-                }
+                //}
             } catch (Exception e) {
                 log.warn("Could not acknowledge message. {}", e.getMessage());
             }
@@ -197,13 +197,14 @@ public class MQTTCommonConsumer {
         }
     }
 
-    private void ack(long ledgerId, long entryId) {
+    /*private void ack(long ledgerId, long entryId) {
         getSubscription().acknowledgeMessage(
                 Collections.singletonList(PositionImpl.get(ledgerId, entryId)),
                 CommandAck.AckType.Individual, Collections.emptyMap());
-    }
+    }*/
 
     public void close() {
+        log.info("[test] Close a common consumer # {} for pulsar topic = {}", index, consumer.getTopic());
         Set<Map.Entry<String, List<MQTTVirtualConsumer>>> consumersSet = consumers.entrySet();
         // close virtual consumers
         for (Map.Entry<String, List<MQTTVirtualConsumer>> entry : consumersSet) {

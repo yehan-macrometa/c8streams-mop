@@ -147,21 +147,6 @@ public class MQTTService {
                 if (consumers != null) {
                     future.complete(consumers);
                 } else {
-                    Subscription sub = null;
-                    try {
-                        sub = PulsarTopicUtils
-                                .getOrCreateSubscription(pulsarService, realTopicName, "commonSub",
-                                        serverConfiguration.getDefaultTenant(), serverConfiguration.getDefaultNamespace(),
-                                        serverConfiguration.getDefaultTopicDomain()).get();
-                        sub.getConsumers().forEach(c -> {
-                            //old consumers should be disconnected.
-                            log.warn("[test] A real topic = {} has as an old consumer. disconnecting it..", realTopicName);
-                            c.disconnect();
-                        });
-                    } catch (Exception e) {
-                        future.completeExceptionally(e);
-                        throw new RuntimeException("Failed to create `commonSub` subscription for real topic = " + realTopicName, e);
-                    }
                     consumers = new ArrayList<>();
 
                     int subscribersCount = serverConfiguration.getMqttRealTopicSubscribersCount();
@@ -171,7 +156,7 @@ public class MQTTService {
 
                     for (int i = 0; i < subscribersCount; i++) {
                         try {
-                            MQTTCommonConsumer commonConsumer = new MQTTCommonConsumer(sub, sub.getTopicName(), "common_" + i, i, orderedSendExecutor, ackExecutor, client);
+                            MQTTCommonConsumer commonConsumer = new MQTTCommonConsumer(realTopicName, "common_" + i, i, orderedSendExecutor, ackExecutor, client);
                             log.info("MqttVirtualTopics: Common consumer #{} for real topic {} initialized", i, realTopicName);
                             consumers.add(commonConsumer);
                         } catch (Exception e) {
