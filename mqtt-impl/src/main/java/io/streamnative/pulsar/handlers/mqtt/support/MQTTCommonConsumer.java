@@ -132,8 +132,10 @@ public class MQTTCommonConsumer {
                             // new message in that attached list and skip calling the sendMessage. Whenever this Promise
                             // completes, we can resubmit these messages via this.sendMessage method or
                             // orderedSendExecutor.executeOrdered method.
-                            log.info("[test] Common consumer = " + consumer.getTopic() + ", message " +
-                                (message.payload() != null ? message.payload().toString(StandardCharsets.UTF_8) : "<empty>"));
+                            if (log.isDebugEnabled()) {
+                                log.info("[Common consumer] Common consumer for pulsar topic {} received message: {}",
+                                    consumer.getTopic(), message.payload().toString(StandardCharsets.UTF_8));
+                            }
                             mqttConsumer.sendMessage(message, packetId, msg.getMessageId());
                         } catch (Exception e) {
                             // TODO: We need to fix each issue possible.
@@ -152,9 +154,8 @@ public class MQTTCommonConsumer {
                         }
                     });
                 });
-            } else {
-                log.info("[test] Common consumer = " + consumer.getTopic() + ", virtual topic = " + virtualTopic +
-                    " is not connected  " + (msg.getData() != null ? new String(msg.getData()) : "<empty>"));
+            } else if (log.isDebugEnabled()) {
+                log.info("[Common Consumer] Common consumer is not connected for virtual topic = {}" + virtualTopic);
             }
         } catch (Exception e) {
             log.warn("An error occurred while processing sendMessage. {}", e.getMessage());
@@ -204,7 +205,7 @@ public class MQTTCommonConsumer {
     }*/
 
     public void close() {
-        log.info("[test] Close a common consumer # {} for pulsar topic = {}", index, consumer.getTopic());
+        log.info("[Common Consumer] Close a common consumer # {} for pulsar topic = {}", index, consumer.getTopic());
         Set<Map.Entry<String, List<MQTTVirtualConsumer>>> consumersSet = consumers.entrySet();
         // close virtual consumers
         for (Map.Entry<String, List<MQTTVirtualConsumer>> entry : consumersSet) {
