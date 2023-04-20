@@ -24,17 +24,26 @@ import org.apache.bookkeeper.common.util.OrderedExecutor;
 import org.apache.pulsar.broker.PulsarService;
 import org.apache.pulsar.broker.authorization.AuthorizationService;
 import org.apache.pulsar.broker.service.BrokerService;
-import org.apache.pulsar.broker.service.Subscription;
 import org.apache.pulsar.client.api.PulsarClient;
 import org.apache.pulsar.client.api.PulsarClientException;
+import org.apache.pulsar.common.naming.NamespaceBundleFactory;
+import org.apache.pulsar.common.naming.NamespaceName;
+import org.apache.pulsar.common.naming.TopicName;
+import org.apache.pulsar.metadata.api.Notification;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
+import java.util.Optional;
+import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
+
+import static org.apache.pulsar.broker.cache.LocalZooKeeperCacheService.LOCAL_POLICIES_ROOT;
 
 /**
  * Main class for mqtt service.
@@ -71,6 +80,7 @@ public class MQTTService {
     private final OrderedExecutor orderedSendExecutor;
     private final ExecutorService ackExecutor;
     private final PulsarClient client;
+    private final ScheduledExecutorService scheduledExecutor;
 
     public MQTTService(BrokerService brokerService, MQTTServerConfiguration serverConfiguration) {
         this.brokerService = brokerService;
@@ -85,6 +95,7 @@ public class MQTTService {
                 serverConfiguration.getMqttAuthenticationMethods()) : null;
         this.connectionManager = new MQTTConnectionManager();
         this.commonConsumersMap = new ConcurrentHashMap<>();
+        this.scheduledExecutor = Executors.newScheduledThreadPool(1);
 
         int numThreads = serverConfiguration.getMqttNumConsumerThreads();
         orderedSendExecutor = OrderedExecutor.newBuilder()
@@ -93,6 +104,9 @@ public class MQTTService {
                 .maxTasksInQueue(100_000)
                 .build();
         ackExecutor = Executors.newWorkStealingPool(numThreads);
+
+        pulsarService.getLocalMetadataStore().registerListener(this::handleMetadataStoreNotification);
+
         MQTTPublisherContext.init(brokerService, serverConfiguration);
 
         try {
@@ -125,16 +139,6 @@ public class MQTTService {
                 if (consumers != null) {
                     future.complete(consumers);
                 } else {
-                    Subscription sub = null;
-                    try {
-                        sub = PulsarTopicUtils
-                                .getOrCreateSubscription(pulsarService, realTopicName, "commonSub",
-                                        serverConfiguration.getDefaultTenant(), serverConfiguration.getDefaultNamespace(),
-                                        serverConfiguration.getDefaultTopicDomain()).get();
-                    } catch (Exception e) {
-                        future.completeExceptionally(e);
-                        throw new RuntimeException("Failed to create `commonSub` subscription for real topic = " + realTopicName, e);
-                    }
                     consumers = new ArrayList<>();
 
                     int subscribersCount = serverConfiguration.getMqttRealTopicSubscribersCount();
@@ -144,7 +148,7 @@ public class MQTTService {
 
                     for (int i = 0; i < subscribersCount; i++) {
                         try {
-                            MQTTCommonConsumer commonConsumer = new MQTTCommonConsumer(sub, sub.getTopicName(), "common_" + i, i, orderedSendExecutor, ackExecutor, client);
+                            MQTTCommonConsumer commonConsumer = new MQTTCommonConsumer(realTopicName, "common_" + i, i, orderedSendExecutor, ackExecutor, client);
                             log.info("MqttVirtualTopics: Common consumer #{} for real topic {} initialized", i, realTopicName);
                             consumers.add(commonConsumer);
                         } catch (Exception e) {
@@ -157,5 +161,40 @@ public class MQTTService {
             }
         }
         return future;
+    }
+
+    private void handleMetadataStoreNotification(Notification n) {
+        if (n.getPath().startsWith(LOCAL_POLICIES_ROOT)) {
+            final NamespaceName namespace = NamespaceName.get(NamespaceBundleFactory.getNamespaceFromPoliciesPath(n.getPath()));
+            log.info("Policy updated for namespace {}, refreshing the common consumers.", namespace);
+            checkAndCloseCommonConsumers(namespace);
+        }
+    }
+
+    private void checkAndCloseCommonConsumers(NamespaceName namespace) {
+        Set<Map.Entry<String, List<MQTTCommonConsumer>>> entries = commonConsumersMap.entrySet();
+        for (Map.Entry<String, List<MQTTCommonConsumer>> entry : entries) {
+
+            try {
+                TopicName topicName = TopicName.get(entry.getKey());
+                if (namespace.toString().equals(topicName.getNamespace())) {
+                    Optional<Boolean> redirectOp = PulsarTopicUtils.isTopicRedirect(pulsarService, entry.getKey(),
+                        serverConfiguration.getDefaultTenant(), serverConfiguration.getDefaultNamespace(), true
+                        , serverConfiguration.getDefaultTopicDomain()).get();
+                    if (log.isDebugEnabled()) {
+                        log.info("Checking common consumers it rebalanced to another broker for pulsar topic = {} with result = {}",
+                            entry.getKey(), redirectOp.toString());
+                    }
+                    if (!redirectOp.isPresent() || redirectOp.get()) {
+                        for (MQTTCommonConsumer commonConsumer : entry.getValue()) {
+                            commonConsumer.close();
+                        }
+                        commonConsumersMap.remove(entry.getKey());
+                    }
+                }
+            } catch (Exception e) {
+                log.warn("Failed lookup a pulsar topic = {} or close common consumes", entry.getKey(), e);
+            }
+        }
     }
 }

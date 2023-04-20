@@ -40,6 +40,7 @@ import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -164,6 +165,9 @@ public class MQTTProxyProtocolMethodProcessor implements ProtocolMethodProcessor
                 channel.close();
                 return;
             }
+            if (log.isDebugEnabled()) {
+                log.info("[Proxy Publish] Proxy redirects topic {} to broker {}", topic, brokerAddress);
+            }
             writeToMqttBroker(channel, msg, pulsarTopicName, brokerAddress);
         });
     }
@@ -239,7 +243,7 @@ public class MQTTProxyProtocolMethodProcessor implements ProtocolMethodProcessor
         }
         CompletableFuture<List<String>> topicListFuture;
         if (proxyConfig.getSharder() != null) {
-            List<String> topicNames = msg.payload().topicSubscriptions().stream()
+            Set<String> topicNames = msg.payload().topicSubscriptions().stream()
                 .map(s -> {
                     String topic = proxyConfig.getSharder().getShardId(s.topicName());
                     if (log.isDebugEnabled()) {
@@ -248,7 +252,7 @@ public class MQTTProxyProtocolMethodProcessor implements ProtocolMethodProcessor
                     }
                     return topic;
                 })
-                .collect(Collectors.toList());
+                .collect(Collectors.toSet());
 
             topicListFuture = PulsarTopicUtils.asyncGetTopicsForSubscribeMsg(topicNames,
                 proxyConfig.getDefaultTenant(), proxyConfig.getDefaultNamespace(), pulsarService,
@@ -270,6 +274,9 @@ public class MQTTProxyProtocolMethodProcessor implements ProtocolMethodProcessor
             for (String topic : topics) {
                 CompletableFuture<InetSocketAddress> lookupResult = lookupHandler.findBroker(TopicName.get(topic));
                 futures.add(lookupResult.thenAccept(brokerAddress -> {
+                    if (log.isDebugEnabled()) {
+                        log.info("[Proxy Subscribe] Proxy redirects topic {} to broker {}", topic, brokerAddress.getHostString());
+                    }
                     increaseSubscribeTopicsCount(msg.variableHeader().messageId(), 1);
                     writeToMqttBroker(channel, msg, topic, brokerAddress);
                 }));
@@ -310,6 +317,9 @@ public class MQTTProxyProtocolMethodProcessor implements ProtocolMethodProcessor
                     log.error("[Proxy UnSubscribe] Failed to perform lookup request", throwable);
                     channel.close();
                     return;
+                }
+                if (log.isDebugEnabled()) {
+                    log.debug("[Proxy Unsubscribe] Proxy redirects topic {} to broker {}", topic, brokerAddress);
                 }
                 writeToMqttBroker(channel, msg, topic, brokerAddress);
             });

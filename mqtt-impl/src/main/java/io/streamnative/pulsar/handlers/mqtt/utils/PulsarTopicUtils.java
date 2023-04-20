@@ -18,16 +18,21 @@ import io.netty.handler.codec.mqtt.MqttSubscribeMessage;
 import io.netty.handler.codec.mqtt.MqttTopicSubscription;
 import io.streamnative.pulsar.handlers.mqtt.TopicFilter;
 import io.streamnative.pulsar.handlers.mqtt.TopicFilterImpl;
+
+import java.net.InetSocketAddress;
+import java.net.URI;
 import java.net.URLDecoder;
 import java.net.URLEncoder;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.stream.Collectors;
 import org.apache.commons.lang3.tuple.Pair;
 import org.apache.pulsar.broker.PulsarService;
+import org.apache.pulsar.broker.lookup.LookupResult;
 import org.apache.pulsar.broker.namespace.LookupOptions;
 import org.apache.pulsar.broker.service.BrokerServiceException;
 import org.apache.pulsar.broker.service.Subscription;
@@ -61,6 +66,43 @@ public class PulsarTopicUtils {
         return pulsarService.getNamespaceService().getBrokerServiceUrlAsync(topic,
                 LookupOptions.builder().authoritative(false).loadTopicsInBundle(false).build())
                 .thenCompose(lookupOp -> pulsarService.getBrokerService().getTopic(topic.toString(), true));
+    }
+
+    public static CompletableFuture<Optional<InetSocketAddress>> getBrokerUrl(PulsarService pulsarService, String topicName,
+                                                                              String defaultTenant, String defaultNamespace, boolean encodeTopicName, String defaultTopicDomain) {
+        final TopicName topic;
+        try {
+            topic = TopicName.get(getPulsarTopicName(topicName, defaultTenant, defaultNamespace, encodeTopicName,
+                TopicDomain.getEnum(defaultTopicDomain)));
+        } catch (Exception e) {
+            return FutureUtil.failedFuture(e);
+        }
+        return pulsarService.getNamespaceService().getBrokerServiceUrlAsync(topic,
+                LookupOptions.builder().authoritative(false).loadTopicsInBundle(false).build())
+            .thenApply(lookupOp ->
+                lookupOp.map(r -> {
+                    try {
+                        // always use plain(not TLS) url
+                        URI uri = new URI(r.getLookupData().getBrokerUrl());
+                        return InetSocketAddress.createUnresolved(uri.getHost(), uri.getPort());
+                    } catch (Exception e) {
+                        return null;
+                    }
+                }));
+    }
+
+    public static CompletableFuture<Optional<Boolean>> isTopicRedirect(PulsarService pulsarService, String topicName,
+                                                                       String defaultTenant, String defaultNamespace, boolean encodeTopicName, String defaultTopicDomain) {
+        final TopicName topic;
+        try {
+            topic = TopicName.get(getPulsarTopicName(topicName, defaultTenant, defaultNamespace, encodeTopicName,
+                TopicDomain.getEnum(defaultTopicDomain)));
+        } catch (Exception e) {
+            return FutureUtil.failedFuture(e);
+        }
+        return pulsarService.getNamespaceService().getBrokerServiceUrlAsync(topic,
+                LookupOptions.builder().authoritative(false).loadTopicsInBundle(false).build())
+            .thenCompose(lookupOp -> CompletableFuture.completedFuture(lookupOp.map(LookupResult::isRedirect)));
     }
 
     public static CompletableFuture<Subscription> getOrCreateSubscription(PulsarService pulsarService,
@@ -174,14 +216,14 @@ public class PulsarTopicUtils {
                  String defaultTenant, String defaultNamespace, PulsarService pulsarService,
                                                                                 String defaultTopicDomain) {
 
-        List<String> topicNames = msg.payload().topicSubscriptions().stream()
+        Set<String> topicNames = msg.payload().topicSubscriptions().stream()
             .map(MqttTopicSubscription::topicName)
-            .collect(Collectors.toList());
+            .collect(Collectors.toSet());
         return asyncGetTopicsForSubscribeMsg(topicNames, defaultTenant, defaultNamespace, pulsarService, defaultTopicDomain);
     }
 
-    public static CompletableFuture<List<String>> asyncGetTopicsForSubscribeMsg(List<String> topicNames,
-                 String defaultTenant, String defaultNamespace, PulsarService pulsarService,
+    public static CompletableFuture<List<String>> asyncGetTopicsForSubscribeMsg(Set<String> topicNames,
+                                                                                String defaultTenant, String defaultNamespace, PulsarService pulsarService,
                                                                                 String defaultTopicDomain) {
         List<CompletableFuture<List<String>>> topicListFuture =
             new ArrayList<>(topicNames.size());

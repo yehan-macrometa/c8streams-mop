@@ -177,7 +177,7 @@ public class DefaultProtocolMethodProcessorImpl implements ProtocolMethodProcess
         if (packet != null && packet.getConsumer() != null) {
             mqttService.getCommonConsumers(packet.getConsumer().getTopicName()).thenAccept(commonConsumers -> {
                 commonConsumers.forEach(c ->
-                        c.acknowledgeMessage(packet.getLedgerId(), packet.getEntryId(), packet.getMessageId()));
+                        c.acknowledgeMessage(/*packet.getLedgerId(), packet.getEntryId(), */packet.getMessageId()));
             });
 
             /*packet.getConsumer().getSubscription().acknowledgeMessage(
@@ -194,27 +194,31 @@ public class DefaultProtocolMethodProcessorImpl implements ProtocolMethodProcess
             log.debug("[Publish] [{}] msg: {}", NettyUtils.getClientId(channel), msg);
         }
 
-        String clientID = NettyUtils.getClientId(channel);
-        String userRole = NettyUtils.getUserRole(channel);
-        // Authorization the client
-        if (!configuration.isMqttAuthorizationEnabled()) {
+        try {
+            String clientID = NettyUtils.getClientId(channel);
+            String userRole = NettyUtils.getUserRole(channel);
+            // Authorization the client
+            if (!configuration.isMqttAuthorizationEnabled()) {
 //            log.debug("[Publish] authorization is disabled, allowing client. CId={}, userRole={}", clientID, userRole);
-            doPublish(channel, msg);
-        } else {
-            this.authorizationService.canProduceAsync(TopicName.get(msg.variableHeader().topicName()),
-                    userRole, new AuthenticationDataCommand(userRole))
-                    .thenAccept((authorized) -> {
-                        if (!authorized) {
-                            log.error("[Publish] no authorization to pub topic={}, userRole={}, CId= {}",
-                                    msg.variableHeader().topicName(), userRole, clientID);
-                            MqttConnAckMessage connAck = MqttMessageUtils.
-                                    connAck(MqttConnectReturnCode.CONNECTION_REFUSED_NOT_AUTHORIZED);
-                            channel.writeAndFlush(connAck);
-                            channel.close();
-                        } else {
-                            doPublish(channel, msg);
-                        }
-                    });
+                doPublish(channel, msg);
+            } else {
+                this.authorizationService.canProduceAsync(TopicName.get(msg.variableHeader().topicName()),
+                                userRole, new AuthenticationDataCommand(userRole))
+                        .thenAccept((authorized) -> {
+                            if (!authorized) {
+                                log.error("[Publish] no authorization to pub topic={}, userRole={}, CId= {}",
+                                        msg.variableHeader().topicName(), userRole, clientID);
+                                MqttConnAckMessage connAck = MqttMessageUtils.
+                                        connAck(MqttConnectReturnCode.CONNECTION_REFUSED_NOT_AUTHORIZED);
+                                channel.writeAndFlush(connAck);
+                                channel.close();
+                            } else {
+                                doPublish(channel, msg);
+                            }
+                        });
+            }
+        } finally {
+            msg.payload().release();
         }
     }
 
@@ -346,39 +350,57 @@ public class DefaultProtocolMethodProcessorImpl implements ProtocolMethodProcess
         List<CompletableFuture<Void>> futureList = new ArrayList<>(subTopics.size());
         Map<String, List<Pair<MQTTCommonConsumer, MQTTVirtualConsumer>>> topicSubscriptions = new ConcurrentHashMap<>();
         for (MqttTopicSubscription subTopic : subTopics) {
-            CompletableFuture<Void> completableFuture = mqttService.getCommonConsumers(subTopic.topicName()).thenAccept(commonConsumers -> {
-                try {
-                    MQTTVirtualConsumer consumer = new MQTTVirtualConsumer(subTopic.topicName(), serverCnx,
-                        subTopic.qualityOfService(), packetIdGenerator, subTopic.topicName(), outstandingVirtualPacketContainer);
-                    log.info("MqttVirtualTopics: Registering to common consumer {}", subTopic.topicName());
-                    List<Pair<MQTTCommonConsumer, MQTTVirtualConsumer>> pairs = new ArrayList();
-                    commonConsumers.forEach(commonConsumer -> {
-                        commonConsumer.add(subTopic.topicName(), consumer);
-                        pairs.add(Pair.of(commonConsumer, consumer));
+            CompletableFuture<List<String>> topicListFuture = PulsarTopicUtils.asyncGetTopicListFromTopicSubscription(
+                subTopic.topicName(), configuration.getDefaultTenant(), configuration.getDefaultNamespace(),
+                pulsarService, configuration.getDefaultTopicDomain());
+            CompletableFuture<Void> completableFuture = topicListFuture.thenCompose(topics -> {
+                List<CompletableFuture<Void>> futures = new ArrayList<>();
+                for (String topic : topics) {
+                    CompletableFuture<Void> future = mqttService.getCommonConsumers(topic).thenAccept(commonConsumers -> {
+                        try {
+                            MQTTVirtualConsumer consumer = new MQTTVirtualConsumer(topic, serverCnx,
+                                subTopic.qualityOfService(), packetIdGenerator, subTopic.topicName(), outstandingVirtualPacketContainer);
+                            log.info("MqttVirtualTopics: Registering to common consumer {}", subTopic.topicName());
+                            List<Pair<MQTTCommonConsumer, MQTTVirtualConsumer>> pairs = new ArrayList();
+                            commonConsumers.forEach(commonConsumer -> {
+                                commonConsumer.add(subTopic.topicName(), consumer);
+                                pairs.add(Pair.of(commonConsumer, consumer));
+                            });
+                            topicSubscriptions.putIfAbsent(subTopic.topicName(), pairs);
+                        } catch (Exception e) {
+                            throw new MQTTServerException(e);
+                        }
                     });
-                    topicSubscriptions.putIfAbsent(subTopic.topicName(), pairs);
-                } catch (Exception e) {
-                    throw new MQTTServerException(e);
+                    futures.add(future);
                 }
+                return FutureUtil.waitForAll(futures);
             });
+
             futureList.add(completableFuture);
         }
-        FutureUtil.waitForAll(futureList).thenAccept(v -> {
-            MqttSubAckMessage ackMessage = createSubAckMessage(subTopics, messageID);
-            if (log.isDebugEnabled()) {
-                log.debug("Sending SUB-ACK message {} to {}", ackMessage, clientID);
-            }
-            channel.writeAndFlush(ackMessage);
-            Map<String, List<Pair<MQTTCommonConsumer, MQTTVirtualConsumer>>> existedSubscriptions = NettyUtils.getTopicSubscriptions(channel);
-            if (existedSubscriptions != null) {
-                topicSubscriptions.putAll(existedSubscriptions);
-            }
-            NettyUtils.setTopicSubscriptions(channel, topicSubscriptions);
-        }).exceptionally(e -> {
-            log.error("[{}] Failed to process MQTT subscribe.", clientID, e);
+
+        if (futureList.isEmpty()) {
+            log.info("[{}] This broker doesn't include topics from MQTT subscribe message.", clientID);
             channel.close();
-            return null;
-        });
+        } else {
+            FutureUtil.waitForAll(futureList).thenAccept(v -> {
+                MqttSubAckMessage ackMessage = createSubAckMessage(subTopics, messageID);
+                if (log.isDebugEnabled()) {
+                    log.debug("Sending SUB-ACK message {} to {}", ackMessage, clientID);
+                }
+                channel.writeAndFlush(ackMessage);
+                Map<String, List<Pair<MQTTCommonConsumer, MQTTVirtualConsumer>>> existedSubscriptions = NettyUtils.getTopicSubscriptions(channel);
+                if (existedSubscriptions != null) {
+                    topicSubscriptions.putAll(existedSubscriptions);
+                }
+                NettyUtils.setTopicSubscriptions(channel, topicSubscriptions);
+            }).exceptionally(e -> {
+                log.error("[{}] Failed to process MQTT subscribe.", clientID, e);
+                channel.close();
+                return null;
+            });
+        }
+
     }
 
     @Override

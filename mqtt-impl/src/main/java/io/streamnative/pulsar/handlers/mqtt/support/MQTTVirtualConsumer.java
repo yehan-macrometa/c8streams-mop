@@ -12,12 +12,14 @@ import io.streamnative.pulsar.handlers.mqtt.OutstandingVirtualPacket;
 import io.streamnative.pulsar.handlers.mqtt.OutstandingVirtualPacketContainer;
 import io.streamnative.pulsar.handlers.mqtt.PacketIdGenerator;
 import lombok.Getter;
+import lombok.extern.slf4j.Slf4j;
 import org.apache.bookkeeper.mledger.Entry;
 import org.apache.pulsar.client.api.MessageId;
 
+import java.nio.charset.StandardCharsets;
 import java.util.Objects;
 
-
+@Slf4j
 public class MQTTVirtualConsumer {
 
     @Getter
@@ -40,7 +42,7 @@ public class MQTTVirtualConsumer {
         this.outstandingVirtualPacketContainer = outstandingVirtualPacketContainer;
     }
 
-    public ChannelPromise sendMessage(Entry entry, MqttPublishMessage msg, int packetId) {
+    /*public ChannelPromise sendMessage(Entry entry, MqttPublishMessage msg, int packetId) {
         if (MqttQoS.AT_MOST_ONCE != qos) {
             outstandingVirtualPacketContainer.add(new OutstandingVirtualPacket(this, packetId, entry.getLedgerId(),
                     entry.getEntryId()));
@@ -50,7 +52,7 @@ public class MQTTVirtualConsumer {
         cnx.ctx().channel().write(msg);
         cnx.ctx().channel().writeAndFlush(Unpooled.EMPTY_BUFFER, promise);
         return promise;
-    }
+    }*/
 
     public ChannelPromise sendMessage(MqttPublishMessage msg, int packetId, MessageId messageId) {
         if (MqttQoS.AT_MOST_ONCE != qos) {
@@ -63,10 +65,6 @@ public class MQTTVirtualConsumer {
         return promise;
     }
 
-    public boolean isActive() {
-        return !cnx.ctx().isRemoved() && cnx.ctx().channel().isActive();
-    }
-
     @Override
     public boolean equals(Object o) {
         return super.equals(o);
@@ -76,6 +74,10 @@ public class MQTTVirtualConsumer {
     @Override
     public int hashCode() {
         return Objects.hash(super.hashCode(), topicName, cnx);
+    }
+
+    public void close() {
+        cnx.ctx().channel().close();
     }
 
 }

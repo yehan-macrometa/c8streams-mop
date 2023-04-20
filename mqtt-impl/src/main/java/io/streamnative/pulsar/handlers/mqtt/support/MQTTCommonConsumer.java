@@ -29,11 +29,15 @@ import org.apache.pulsar.client.api.MessageId;
 import org.apache.pulsar.client.api.PulsarClient;
 import org.apache.pulsar.client.api.PulsarClientException;
 import org.apache.pulsar.client.api.SubscriptionInitialPosition;
+import org.apache.pulsar.client.api.SubscriptionType;
 import org.apache.pulsar.common.api.proto.CommandAck;
 
+import java.nio.charset.StandardCharsets;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.ExecutorService;
@@ -43,8 +47,9 @@ import java.util.concurrent.ExecutorService;
  */
 @Slf4j
 public class MQTTCommonConsumer {
+    /*@Getter
+    private final Subscription subscription;*/
     @Getter
-    private final Subscription subscription;
     private Map<String, List<MQTTVirtualConsumer>> consumers = new ConcurrentHashMap<>();
     private PacketIdGenerator packetIdGenerator = PacketIdGenerator.newNonZeroGenerator();
     @Getter
@@ -53,10 +58,10 @@ public class MQTTCommonConsumer {
     private final ExecutorService ackExecutor;
     private Consumer<byte[]> consumer;
 
-    public MQTTCommonConsumer(Subscription subscription, String pulsarTopicName, String consumerName, int index,
+    public MQTTCommonConsumer(/*Subscription subscription, */String pulsarTopicName, String consumerName, int index,
                               OrderedExecutor orderedSendExecutor, ExecutorService ackExecutor, PulsarClient client) {
         this.index = index;
-        this.subscription = subscription;
+        /*this.subscription = subscription;*/
         this.orderedSendExecutor = orderedSendExecutor;
         this.ackExecutor = ackExecutor;
 
@@ -64,11 +69,12 @@ public class MQTTCommonConsumer {
             consumer = client.newConsumer()
                     .consumerName(consumerName)
                     .topic(pulsarTopicName)
-                    .subscriptionName(subscription.getName())
+                    .subscriptionName("commonSub")
+                    .subscriptionType(SubscriptionType.Shared)
                     .subscriptionInitialPosition(SubscriptionInitialPosition.Earliest)
                     .messageListener(this::sendMessages)
                     .receiverQueueSize(100_000)
-                    .subscribe();;
+                    .subscribe();
         } catch (PulsarClientException e) {
             log.error("Could not create common consumer.", e);
         }
@@ -126,6 +132,10 @@ public class MQTTCommonConsumer {
                             // new message in that attached list and skip calling the sendMessage. Whenever this Promise
                             // completes, we can resubmit these messages via this.sendMessage method or
                             // orderedSendExecutor.executeOrdered method.
+                            if (log.isDebugEnabled()) {
+                                log.info("[Common consumer] Common consumer for pulsar topic {} received message: {}",
+                                    consumer.getTopic(), message.payload().toString(StandardCharsets.UTF_8));
+                            }
                             mqttConsumer.sendMessage(message, packetId, msg.getMessageId());
                         } catch (Exception e) {
                             // TODO: We need to fix each issue possible.
@@ -144,6 +154,8 @@ public class MQTTCommonConsumer {
                         }
                     });
                 });
+            } else if (log.isDebugEnabled()) {
+                log.info("[Common Consumer] Common consumer is not connected for virtual topic = {}" + virtualTopic);
             }
         } catch (Exception e) {
             log.warn("An error occurred while processing sendMessage. {}", e.getMessage());
@@ -152,26 +164,26 @@ public class MQTTCommonConsumer {
 
     public void add(String mqttTopicName, MQTTVirtualConsumer consumer) {
         consumers.computeIfAbsent(mqttTopicName, s -> new CopyOnWriteArrayList<>()).add(consumer);
-        log.debug("Add virtual consumer to common #{} for topic {}. left consumers = {}",
-            index, mqttTopicName, consumers.get(mqttTopicName).size());
+        log.info("Add virtual consumer to common #{} for virtual topic = {}, real topic = {}. left consumers = {}",
+            index, mqttTopicName, this.consumer.getTopic(), consumers.get(mqttTopicName).size());
     }
 
     public void remove(String mqttTopicName, MQTTVirtualConsumer consumer) {
         if (consumers.containsKey(mqttTopicName)) {
             boolean result = consumers.get(mqttTopicName).remove(consumer);
-            log.debug("Try remove({}) virtual consumer from common #{} for topic {}. left consumers = {}",
-                result, index, mqttTopicName, consumers.get(mqttTopicName).size());
+            log.info("Try remove({}) virtual consumer from common #{} for virtual topic = {}, real topic = {}. left consumers = {}",
+                result, index, mqttTopicName, this.consumer.getTopic(), consumers.get(mqttTopicName).size());
         }
     }
 
-    public void acknowledgeMessage(long ledgerId, long entryId, MessageId messageId) {
+    public void acknowledgeMessage(/*long ledgerId, long entryId, */MessageId messageId) {
         ackExecutor.submit(() -> {
             try {
-                if (messageId == null) {
+                /*if (messageId == null) {
                     ack(ledgerId, entryId);
-                } else {
+                } else {*/
                     ack(messageId);
-                }
+                //}
             } catch (Exception e) {
                 log.warn("Could not acknowledge message. {}", e.getMessage());
             }
@@ -186,9 +198,26 @@ public class MQTTCommonConsumer {
         }
     }
 
-    private void ack(long ledgerId, long entryId) {
+    /*private void ack(long ledgerId, long entryId) {
         getSubscription().acknowledgeMessage(
                 Collections.singletonList(PositionImpl.get(ledgerId, entryId)),
                 CommandAck.AckType.Individual, Collections.emptyMap());
+    }*/
+
+    public void close() {
+        log.info("[Common Consumer] Close a common consumer # {} for pulsar topic = {}", index, consumer.getTopic());
+        Set<Map.Entry<String, List<MQTTVirtualConsumer>>> consumersSet = consumers.entrySet();
+        // close virtual consumers
+        for (Map.Entry<String, List<MQTTVirtualConsumer>> entry : consumersSet) {
+            for (MQTTVirtualConsumer virtualConsumer: entry.getValue()) {
+                virtualConsumer.close();
+            }
+        }
+        // close common consumer
+        try {
+            consumer.close();
+        } catch (PulsarClientException e) {
+            log.warn("Failed to close common consumer for pulsar topic = {}", consumer.getTopic(), e);
+        }
     }
 }
