@@ -175,9 +175,8 @@ public class DefaultProtocolMethodProcessorImpl implements ProtocolMethodProcess
         int packetId = msg.variableHeader().messageId();
         OutstandingVirtualPacket packet = outstandingVirtualPacketContainer.remove(packetId);
         if (packet != null && packet.getConsumer() != null) {
-            mqttService.getCommonConsumers(packet.getConsumer().getTopicName()).thenAccept(commonConsumers -> {
-                commonConsumers.forEach(c ->
-                        c.acknowledgeMessage(/*packet.getLedgerId(), packet.getEntryId(), */packet.getMessageId()));
+            mqttService.getCommonConsumers(packet.getConsumer().getTopicName()).thenAccept(consumerGroup -> {
+                consumerGroup.acknowledgeMessage(packet.getMessageId());
             });
 
             /*packet.getConsumer().getSubscription().acknowledgeMessage(
@@ -344,7 +343,7 @@ public class DefaultProtocolMethodProcessorImpl implements ProtocolMethodProcess
         List<MqttTopicSubscription> subTopics = topicSubscriptions(msg);
 
         List<CompletableFuture<Void>> futureList = new ArrayList<>(subTopics.size());
-        Map<String, List<Pair<MQTTCommonConsumer, MQTTVirtualConsumer>>> topicSubscriptions = new ConcurrentHashMap<>();
+        Map<String, Pair<MQTTCommonConsumerGroup, MQTTVirtualConsumer>> topicSubscriptions = new ConcurrentHashMap<>();
         for (MqttTopicSubscription subTopic : subTopics) {
             CompletableFuture<List<String>> topicListFuture = PulsarTopicUtils.asyncGetTopicListFromTopicSubscription(
                 subTopic.topicName(), configuration.getDefaultTenant(), configuration.getDefaultNamespace(),
@@ -352,19 +351,15 @@ public class DefaultProtocolMethodProcessorImpl implements ProtocolMethodProcess
             CompletableFuture<Void> completableFuture = topicListFuture.thenCompose(topics -> {
                 List<CompletableFuture<Void>> futures = new ArrayList<>();
                 for (String topic : topics) {
-                    CompletableFuture<Void> future = mqttService.getCommonConsumers(topic).thenAccept(commonConsumers -> {
-                        log.info("ConsumerDebug: Adding virtual consumer {} to {} common consumers. ", commonConsumers.size(), topic);
+                    CompletableFuture<Void> future = mqttService.getCommonConsumers(topic).thenAccept(consumerGroup -> {
+                        log.info("ConsumerDebug: Adding virtual consumer {} to {} common consumers. ", consumerGroup.getConsumers().size(), topic);
                         try {
                             MQTTVirtualConsumer consumer = new MQTTVirtualConsumer(topic, serverCnx,
                                 subTopic.qualityOfService(), packetIdGenerator, subTopic.topicName(), outstandingVirtualPacketContainer);
                             log.info("MqttVirtualTopics: Registering to common consumer {}", subTopic.topicName());
-                            List<Pair<MQTTCommonConsumer, MQTTVirtualConsumer>> pairs = new ArrayList();
-                            commonConsumers.forEach(commonConsumer -> {
-                                commonConsumer.add(subTopic.topicName(), consumer);
-                                log.info("ConsumerDebug: Added virtual consumer {} to common consumer. Common consumer now has {} virtual consumers.", topic, commonConsumer.getConsumers().size());
-                                pairs.add(Pair.of(commonConsumer, consumer));
-                            });
-                            topicSubscriptions.putIfAbsent(subTopic.topicName(), pairs);
+                            log.info("ConsumerDebug: Added virtual consumer {} to common consumer. Common consumer now has {} virtual consumers.", topic, consumerGroup.getConsumers().size());
+                            consumerGroup.add(subTopic.topicName(), consumer);
+                            topicSubscriptions.putIfAbsent(subTopic.topicName(), Pair.of(consumerGroup, consumer));
                         } catch (Exception e) {
                             throw new MQTTServerException(e);
                         }
@@ -387,7 +382,7 @@ public class DefaultProtocolMethodProcessorImpl implements ProtocolMethodProcess
                     log.debug("Sending SUB-ACK message {} to {}", ackMessage, clientID);
                 }
                 channel.writeAndFlush(ackMessage);
-                Map<String, List<Pair<MQTTCommonConsumer, MQTTVirtualConsumer>>> existedSubscriptions = NettyUtils.getTopicSubscriptions(channel);
+                Map<String, Pair<MQTTCommonConsumerGroup, MQTTVirtualConsumer>> existedSubscriptions = NettyUtils.getTopicSubscriptions(channel);
                 if (existedSubscriptions != null) {
                     topicSubscriptions.putAll(existedSubscriptions);
                 }
@@ -425,10 +420,10 @@ public class DefaultProtocolMethodProcessorImpl implements ProtocolMethodProcess
                             Subscription subscription = topicOp.get().getSubscription(clientID);
                             if (subscription != null) {
                                 try {
-                                    MQTTVirtualConsumer consumer = new MQTTVirtualConsumer(topicFilter, serverCnx,
+                                    MQTTVirtualConsumer consumer = new MQTTVirtualConsumer(topic, serverCnx,
                                         qos, packetIdGenerator, topic, outstandingVirtualPacketContainer);
 
-                                    mqttService.getCommonConsumers(topic).get().forEach(commonConsumer -> commonConsumer.remove(topicFilter, consumer));
+                                    mqttService.getCommonConsumers(topic).get().remove(topic, consumer);
                                     //topicOp.get().getSubscription(clientID).removeConsumer(consumer);
                                     futures.add(topicOp.get().unsubscribe(clientID));
                                 } catch (Exception e) {

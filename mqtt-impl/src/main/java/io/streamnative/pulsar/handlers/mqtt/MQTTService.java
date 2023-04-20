@@ -14,9 +14,11 @@
 package io.streamnative.pulsar.handlers.mqtt;
 
 import io.streamnative.pulsar.handlers.mqtt.support.MQTTCommonConsumer;
+import io.streamnative.pulsar.handlers.mqtt.support.MQTTCommonConsumerGroup;
 import io.streamnative.pulsar.handlers.mqtt.support.MQTTMetricsCollector;
 import io.streamnative.pulsar.handlers.mqtt.support.MQTTMetricsProvider;
 import io.streamnative.pulsar.handlers.mqtt.support.MQTTPublisherContext;
+import io.streamnative.pulsar.handlers.mqtt.support.deadletter.DeadLetterConsumer;
 import io.streamnative.pulsar.handlers.mqtt.utils.PulsarTopicUtils;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
@@ -76,7 +78,7 @@ public class MQTTService {
     private final MQTTConnectionManager connectionManager;
 
     @Getter
-    private final ConcurrentHashMap<String, List<MQTTCommonConsumer>> commonConsumersMap;
+    private final ConcurrentHashMap<String, MQTTCommonConsumerGroup> commonConsumersMap;
     private final OrderedExecutor orderedSendExecutor;
     private final ExecutorService ackExecutor;
     private final PulsarClient client;
@@ -125,46 +127,31 @@ public class MQTTService {
         }
     }
 
-    public CompletableFuture<List<MQTTCommonConsumer>> getCommonConsumers(String virtualTopicName) {
-        CompletableFuture<List<MQTTCommonConsumer>> future = new CompletableFuture<>();
+    public CompletableFuture<MQTTCommonConsumerGroup> getCommonConsumers(String virtualTopicName) {
+        CompletableFuture<MQTTCommonConsumerGroup> future = new CompletableFuture<>();
         String realTopicName = serverConfiguration.getSharder().getShardId(virtualTopicName);
-        List<MQTTCommonConsumer> consumers = commonConsumersMap.get(realTopicName);
+        MQTTCommonConsumerGroup consumerGroup = commonConsumersMap.get(realTopicName);
 
-        if (consumers != null) {
-            future.complete(consumers);
+        if (consumerGroup != null) {
+            future.complete(consumerGroup);
         } else {
             synchronized (this) {
-                consumers = commonConsumersMap.get(realTopicName);
+                consumerGroup = commonConsumersMap.get(realTopicName);
 
-                if (consumers != null) {
-                    future.complete(consumers);
+                if (consumerGroup != null) {
+                    future.complete(consumerGroup);
                 } else {
-                    consumers = new ArrayList<>();
 
-                    int subscribersCount = serverConfiguration.getMqttRealTopicSubscribersCount();
-                    if (subscribersCount < 1) {
-                        subscribersCount = 1;
-                    }
-
-                    Exception exception = null;
-                    for (int i = 0; i < subscribersCount; i++) {
-                        try {
-                            MQTTCommonConsumer commonConsumer = new MQTTCommonConsumer(realTopicName, "common_" + i, i, orderedSendExecutor, ackExecutor, client);
-                            log.info("MqttVirtualTopics: Common consumer #{} for real topic {} initialized", i, realTopicName);
-                            consumers.add(commonConsumer);
-                        } catch (PulsarClientException e) {
-                            log.error("Could not create common consumer", e);
-                            exception = e;
-                            break;
-                        }
-                    }
-
-                    if (exception == null) {
-                        commonConsumersMap.put(realTopicName, consumers);
-                        future.complete(consumers);
-                    } else {
-                        consumers.forEach(MQTTCommonConsumer::close);
-                        future.completeExceptionally(exception);
+                    try {
+                        consumerGroup = new MQTTCommonConsumerGroup(client, orderedSendExecutor,
+                            ackExecutor, realTopicName,
+                            serverConfiguration.getMqttMaxRedeliverTimeSec(),
+                            serverConfiguration.getMqttRealTopicSubscribersCount());
+                        commonConsumersMap.put(realTopicName, consumerGroup);
+                        future.complete(consumerGroup);
+                    } catch (PulsarClientException e) {
+                        log.error("Could not create common consumer", e);
+                        future.completeExceptionally(e);
                     }
                 }
             }
@@ -181,8 +168,8 @@ public class MQTTService {
     }
 
     private void checkAndCloseCommonConsumers(NamespaceName namespace) {
-        Set<Map.Entry<String, List<MQTTCommonConsumer>>> entries = commonConsumersMap.entrySet();
-        for (Map.Entry<String, List<MQTTCommonConsumer>> entry : entries) {
+        Set<Map.Entry<String, MQTTCommonConsumerGroup>> entries = commonConsumersMap.entrySet();
+        for (Map.Entry<String, MQTTCommonConsumerGroup> entry : entries) {
 
             try {
                 TopicName topicName = TopicName.get(entry.getKey());
@@ -195,9 +182,7 @@ public class MQTTService {
                             entry.getKey(), redirectOp.toString());
                     }
                     if (!redirectOp.isPresent() || redirectOp.get()) {
-                        for (MQTTCommonConsumer commonConsumer : entry.getValue()) {
-                            commonConsumer.close();
-                        }
+                        entry.getValue().close();
                         commonConsumersMap.remove(entry.getKey());
                     }
                 }

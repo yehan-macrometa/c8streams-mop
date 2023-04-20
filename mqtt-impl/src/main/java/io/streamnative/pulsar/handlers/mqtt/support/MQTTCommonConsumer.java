@@ -18,26 +18,23 @@ import io.netty.handler.codec.mqtt.MqttPublishMessage;
 import io.netty.handler.codec.mqtt.MqttQoS;
 import io.netty.util.internal.StringUtil;
 import io.streamnative.pulsar.handlers.mqtt.PacketIdGenerator;
+import io.streamnative.pulsar.handlers.mqtt.support.deadletter.DeadLetterConsumer;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.bookkeeper.common.util.OrderedExecutor;
-import org.apache.bookkeeper.mledger.impl.PositionImpl;
-import org.apache.pulsar.broker.service.Subscription;
 import org.apache.pulsar.client.api.Consumer;
+import org.apache.pulsar.client.api.DeadLetterPolicy;
 import org.apache.pulsar.client.api.Message;
 import org.apache.pulsar.client.api.MessageId;
 import org.apache.pulsar.client.api.PulsarClient;
 import org.apache.pulsar.client.api.PulsarClientException;
 import org.apache.pulsar.client.api.SubscriptionInitialPosition;
 import org.apache.pulsar.client.api.SubscriptionType;
-import org.apache.pulsar.common.api.proto.CommandAck;
 
 import java.nio.charset.StandardCharsets;
-import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.ExecutorService;
@@ -47,8 +44,6 @@ import java.util.concurrent.ExecutorService;
  */
 @Slf4j
 public class MQTTCommonConsumer {
-    /*@Getter
-    private final Subscription subscription;*/
     @Getter
     private Map<String, List<MQTTVirtualConsumer>> consumers = new ConcurrentHashMap<>();
     private PacketIdGenerator packetIdGenerator = PacketIdGenerator.newNonZeroGenerator();
@@ -58,10 +53,9 @@ public class MQTTCommonConsumer {
     private final ExecutorService ackExecutor;
     private Consumer<byte[]> consumer;
 
-    public MQTTCommonConsumer(/*Subscription subscription, */String pulsarTopicName, String consumerName, int index,
+    public MQTTCommonConsumer(String pulsarTopicName, String consumerName, int index,
                               OrderedExecutor orderedSendExecutor, ExecutorService ackExecutor, PulsarClient client) throws PulsarClientException {
         this.index = index;
-        /*this.subscription = subscription;*/
         this.orderedSendExecutor = orderedSendExecutor;
         this.ackExecutor = ackExecutor;
 
@@ -189,14 +183,10 @@ public class MQTTCommonConsumer {
         }
     }
 
-    public void acknowledgeMessage(/*long ledgerId, long entryId, */MessageId messageId) {
+    public void acknowledgeMessage(MessageId messageId) {
         ackExecutor.submit(() -> {
             try {
-                /*if (messageId == null) {
-                    ack(ledgerId, entryId);
-                } else {*/
-                    ack(messageId);
-                //}
+                ack(messageId);
             } catch (Exception e) {
                 log.warn("Could not acknowledge message. {}", e.getMessage());
             }
@@ -210,12 +200,6 @@ public class MQTTCommonConsumer {
             log.error("Could not acknowledge the message {}.", messageId);
         }
     }
-
-    /*private void ack(long ledgerId, long entryId) {
-        getSubscription().acknowledgeMessage(
-                Collections.singletonList(PositionImpl.get(ledgerId, entryId)),
-                CommandAck.AckType.Individual, Collections.emptyMap());
-    }*/
 
     public void close() {
         log.info("[Common Consumer] Close a common consumer # {} for pulsar topic = {}", index, consumer.getTopic());
