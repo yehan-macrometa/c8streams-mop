@@ -38,7 +38,6 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
@@ -121,70 +120,46 @@ public class MQTTService {
                     .ioThreads(numThreads)
                     .listenerThreads(numThreads)
                     .build();
-
-            initConsumers(brokerService, serverConfiguration);
         } catch (PulsarClientException e) {
             throw new RuntimeException(e);
         }
     }
 
-    private void initConsumers(BrokerService brokerService, MQTTServerConfiguration serverConfiguration) {
-        List<String> topics = MQTTProtocolHandler.getRealTopics(serverConfiguration.getMqttRealTopicNamePrefix(),
-                serverConfiguration.getMqttRealTopicCount());
-        if (topics == null) {
-            return;
-        }
-        topics.forEach(topic -> {
-            try {
-                Optional<Boolean> redirect = PulsarTopicUtils.isTopicRedirect(brokerService.getPulsar(), topic, serverConfiguration.getDefaultTenant(), serverConfiguration.getDefaultNamespace(), true
-                        , serverConfiguration.getDefaultTopicDomain()).get();
-                if (!redirect.orElse(true)) {
-                    createCommonConsumers(topic).get();
-                }
-            } catch (InterruptedException | ExecutionException e) {
-                throw new RuntimeException(e);
-            }
-        });
-    }
-
     public CompletableFuture<List<MQTTCommonConsumer>> getCommonConsumers(String virtualTopicName) {
+        CompletableFuture<List<MQTTCommonConsumer>> future = new CompletableFuture<>();
         String realTopicName = serverConfiguration.getSharder().getShardId(virtualTopicName);
         List<MQTTCommonConsumer> consumers = commonConsumersMap.get(realTopicName);
 
         if (consumers != null) {
-            return CompletableFuture.completedFuture(consumers);
-        } else {
-            return createCommonConsumers(realTopicName);
-        }
-    }
-
-    private synchronized CompletableFuture<List<MQTTCommonConsumer>> createCommonConsumers(String realTopicName) {
-        CompletableFuture<List<MQTTCommonConsumer>> future = new CompletableFuture<>();
-        List<MQTTCommonConsumer> consumers = commonConsumersMap.get(realTopicName);
-
-        if (consumers != null) {
             future.complete(consumers);
         } else {
-            consumers = new ArrayList<>();
+            synchronized (this) {
+                consumers = commonConsumersMap.get(realTopicName);
 
-            int subscribersCount = serverConfiguration.getMqttRealTopicSubscribersCount();
-            if (subscribersCount < 1) {
-                subscribersCount = 1;
-            }
+                if (consumers != null) {
+                    future.complete(consumers);
+                } else {
+                    consumers = new ArrayList<>();
 
-            for (int i = 0; i < subscribersCount; i++) {
-                try {
-                    MQTTCommonConsumer commonConsumer = new MQTTCommonConsumer(realTopicName, "common_" + i, i, orderedSendExecutor, ackExecutor, client);
-                    log.info("MqttVirtualTopics: Common consumer #{} for real topic {} initialized", i, realTopicName);
-                    consumers.add(commonConsumer);
-                } catch (Exception e) {
-                    log.error("Could not create common consumer", e);
+                    int subscribersCount = serverConfiguration.getMqttRealTopicSubscribersCount();
+                    if (subscribersCount < 1) {
+                        subscribersCount = 1;
+                    }
+
+                    for (int i = 0; i < subscribersCount; i++) {
+                        try {
+                            MQTTCommonConsumer commonConsumer = new MQTTCommonConsumer(realTopicName, "common_" + i, i, orderedSendExecutor, ackExecutor, client);
+                            log.info("MqttVirtualTopics: Common consumer #{} for real topic {} initialized", i, realTopicName);
+                            consumers.add(commonConsumer);
+                        } catch (Exception e) {
+                            log.error("Could not create common consumer", e);
+                        }
+                    }
+                    commonConsumersMap.put(realTopicName, consumers);
+                    future.complete(consumers);
                 }
             }
-            commonConsumersMap.put(realTopicName, consumers);
-            future.complete(consumers);
         }
-
         return future;
     }
 
