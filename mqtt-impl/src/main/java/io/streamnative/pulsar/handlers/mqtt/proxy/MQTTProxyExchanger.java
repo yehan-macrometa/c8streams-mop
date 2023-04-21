@@ -27,6 +27,7 @@ import io.netty.handler.codec.mqtt.MqttDecoder;
 import io.netty.handler.codec.mqtt.MqttEncoder;
 import io.netty.handler.codec.mqtt.MqttMessage;
 import io.netty.handler.codec.mqtt.MqttMessageType;
+import io.netty.handler.codec.mqtt.MqttPublishMessage;
 import io.netty.handler.codec.mqtt.MqttSubAckMessage;
 import io.streamnative.pulsar.handlers.mqtt.utils.NettyUtils;
 import java.net.InetSocketAddress;
@@ -100,6 +101,13 @@ public class MQTTProxyExchanger {
                                 subAckMessage.variableHeader().messageId()) == 0) {
                             processor.clientChannel().writeAndFlush(message);
                         }
+                        break;
+                    case PUBLISH:
+                        MqttPublishMessage pubMessage = (MqttPublishMessage) msg;
+                        int packetId = pubMessage.variableHeader().packetId();
+                        String topicName = pubMessage.variableHeader().topicName();
+                        processor.getPacketIdTopic().put(packetId, topicName);
+                        processor.clientChannel().writeAndFlush(msg);
                         break;
                     default:
                         processor.clientChannel().writeAndFlush(message);
