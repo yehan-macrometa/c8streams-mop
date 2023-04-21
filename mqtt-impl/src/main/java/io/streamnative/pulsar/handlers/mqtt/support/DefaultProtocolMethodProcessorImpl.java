@@ -194,31 +194,27 @@ public class DefaultProtocolMethodProcessorImpl implements ProtocolMethodProcess
             log.debug("[Publish] [{}] msg: {}", NettyUtils.getClientId(channel), msg);
         }
 
-        try {
-            String clientID = NettyUtils.getClientId(channel);
-            String userRole = NettyUtils.getUserRole(channel);
-            // Authorization the client
-            if (!configuration.isMqttAuthorizationEnabled()) {
+        String clientID = NettyUtils.getClientId(channel);
+        String userRole = NettyUtils.getUserRole(channel);
+        // Authorization the client
+        if (!configuration.isMqttAuthorizationEnabled()) {
 //            log.debug("[Publish] authorization is disabled, allowing client. CId={}, userRole={}", clientID, userRole);
-                doPublish(channel, msg);
-            } else {
-                this.authorizationService.canProduceAsync(TopicName.get(msg.variableHeader().topicName()),
-                                userRole, new AuthenticationDataCommand(userRole))
-                        .thenAccept((authorized) -> {
-                            if (!authorized) {
-                                log.error("[Publish] no authorization to pub topic={}, userRole={}, CId= {}",
-                                        msg.variableHeader().topicName(), userRole, clientID);
-                                MqttConnAckMessage connAck = MqttMessageUtils.
-                                        connAck(MqttConnectReturnCode.CONNECTION_REFUSED_NOT_AUTHORIZED);
-                                channel.writeAndFlush(connAck);
-                                channel.close();
-                            } else {
-                                doPublish(channel, msg);
-                            }
-                        });
-            }
-        } finally {
-            msg.payload().release();
+            doPublish(channel, msg);
+        } else {
+            this.authorizationService.canProduceAsync(TopicName.get(msg.variableHeader().topicName()),
+                    userRole, new AuthenticationDataCommand(userRole))
+                    .thenAccept((authorized) -> {
+                        if (!authorized) {
+                            log.error("[Publish] no authorization to pub topic={}, userRole={}, CId= {}",
+                                    msg.variableHeader().topicName(), userRole, clientID);
+                            MqttConnAckMessage connAck = MqttMessageUtils.
+                                    connAck(MqttConnectReturnCode.CONNECTION_REFUSED_NOT_AUTHORIZED);
+                            channel.writeAndFlush(connAck);
+                            channel.close();
+                        } else {
+                            doPublish(channel, msg);
+                        }
+                    });
         }
     }
 
