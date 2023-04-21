@@ -97,7 +97,7 @@ public class DeadLetterConsumer {
                         log.debug("[DLT Consumer] Consumer for pulsar topic {} received message: {}",
                             consumer.getTopic(), message.payload().toString(StandardCharsets.UTF_8));
                     }
-                    mqttConsumer.sendMessage(message, packetId, msg.getMessageId());
+                    mqttConsumer.sendMessage(message, consumer, packetId, msg.getMessageId());
                     if (mqttConsumer.getQos() == MqttQoS.AT_MOST_ONCE) {
                         consumer.acknowledge(msg);
                     }

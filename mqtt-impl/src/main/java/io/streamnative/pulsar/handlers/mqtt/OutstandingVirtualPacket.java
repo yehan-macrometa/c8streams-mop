@@ -14,6 +14,7 @@
 package io.streamnative.pulsar.handlers.mqtt;
 
 import io.streamnative.pulsar.handlers.mqtt.support.MQTTVirtualConsumer;
+import org.apache.pulsar.client.api.Consumer;
 import org.apache.pulsar.client.api.MessageId;
 
 /**
@@ -22,14 +23,16 @@ import org.apache.pulsar.client.api.MessageId;
 public class OutstandingVirtualPacket {
 
     private final MQTTVirtualConsumer consumer;
+    private final Consumer<byte[]> pulsarConsumer;
     private final int packetId;
     private final long ledgerId;
     private final long entryId;
     private final MessageId messageId;
 
 
-    public OutstandingVirtualPacket(MQTTVirtualConsumer consumer, int packetId, long ledgerId, long entryId) {
+    public OutstandingVirtualPacket(MQTTVirtualConsumer consumer, Consumer<byte[]> pulsarConsumer, int packetId, long ledgerId, long entryId) {
         this.consumer = consumer;
+        this.pulsarConsumer = pulsarConsumer;
         this.packetId = packetId;
         this.ledgerId = ledgerId;
         this.entryId = entryId;
@@ -37,8 +40,9 @@ public class OutstandingVirtualPacket {
     }
 
 
-    public OutstandingVirtualPacket(MQTTVirtualConsumer consumer, int packetId,MessageId messageId) {
+    public OutstandingVirtualPacket(MQTTVirtualConsumer consumer, Consumer<byte[]> pulsarConsumer, int packetId,MessageId messageId) {
         this.consumer = consumer;
+        this.pulsarConsumer = pulsarConsumer;
         this.packetId = packetId;
         this.ledgerId = 0;
         this.entryId = 0;
@@ -47,6 +51,10 @@ public class OutstandingVirtualPacket {
 
     public MQTTVirtualConsumer getConsumer() {
         return consumer;
+    }
+
+    public Consumer<byte[]> getPulsarConsumer() {
+        return pulsarConsumer;
     }
 
     public int getPacketId() {
