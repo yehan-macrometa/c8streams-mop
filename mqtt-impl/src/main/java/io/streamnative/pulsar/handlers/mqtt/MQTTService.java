@@ -13,12 +13,11 @@
  */
 package io.streamnative.pulsar.handlers.mqtt;
 
-import io.streamnative.pulsar.handlers.mqtt.support.MQTTCommonConsumer;
+import io.netty.util.concurrent.DefaultThreadFactory;
 import io.streamnative.pulsar.handlers.mqtt.support.MQTTCommonConsumerGroup;
 import io.streamnative.pulsar.handlers.mqtt.support.MQTTMetricsCollector;
 import io.streamnative.pulsar.handlers.mqtt.support.MQTTMetricsProvider;
 import io.streamnative.pulsar.handlers.mqtt.support.MQTTPublisherContext;
-import io.streamnative.pulsar.handlers.mqtt.support.deadletter.DeadLetterConsumer;
 import io.streamnative.pulsar.handlers.mqtt.utils.PulsarTopicUtils;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
@@ -33,8 +32,6 @@ import org.apache.pulsar.common.naming.NamespaceName;
 import org.apache.pulsar.common.naming.TopicName;
 import org.apache.pulsar.metadata.api.Notification;
 
-import java.util.ArrayList;
-import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
@@ -81,6 +78,7 @@ public class MQTTService {
     private final ConcurrentHashMap<String, MQTTCommonConsumerGroup> commonConsumersMap;
     private final OrderedExecutor orderedSendExecutor;
     private final ExecutorService ackExecutor;
+    private final ExecutorService dltExecutor;
     private final PulsarClient client;
     private final ScheduledExecutorService scheduledExecutor;
 
@@ -106,6 +104,8 @@ public class MQTTService {
                 .maxTasksInQueue(100_000)
                 .build();
         ackExecutor = Executors.newWorkStealingPool(numThreads);
+        dltExecutor = Executors.newCachedThreadPool(
+            new DefaultThreadFactory("mqtt-dlt-exec", false, 2));
 
         pulsarService.getLocalMetadataStore().registerListener(this::handleMetadataStoreNotification);
 
@@ -144,9 +144,7 @@ public class MQTTService {
 
                     try {
                         consumerGroup = new MQTTCommonConsumerGroup(client, orderedSendExecutor,
-                            ackExecutor, realTopicName,
-                            serverConfiguration.getMqttMaxRedeliverTimeSec(),
-                            serverConfiguration.getMqttRealTopicSubscribersCount());
+                            ackExecutor, dltExecutor, realTopicName, serverConfiguration);
                         commonConsumersMap.put(realTopicName, consumerGroup);
                         future.complete(consumerGroup);
                     } catch (PulsarClientException e) {

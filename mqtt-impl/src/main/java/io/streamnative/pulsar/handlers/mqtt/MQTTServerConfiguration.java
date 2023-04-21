@@ -39,7 +39,13 @@ public class MQTTServerConfiguration extends MQTTCommonConfiguration {
 
     @FieldContext(
         category = CATEGORY_MQTT,
-        doc = "Set number of redelivery counts for pulsar topic."
+        doc = "Set time in seconds how long take message in an original pulsar topic."
     )
-    private int mqttMaxRedeliverTimeSec= 3;
+    private int mqttMaxRedeliverTimeSec = 60;
+
+    @FieldContext(
+        category = CATEGORY_MQTT,
+        doc = "Default messages per second dispatch throttling-limit for every pulsar topic. Using a value of 0, is disabling default"
+    )
+    private int mqttDLTThrottlingRatePerTopicInMsg = 100;
 }
