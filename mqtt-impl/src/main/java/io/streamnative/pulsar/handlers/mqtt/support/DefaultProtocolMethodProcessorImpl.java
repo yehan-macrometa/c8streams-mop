@@ -174,9 +174,9 @@ public class DefaultProtocolMethodProcessorImpl implements ProtocolMethodProcess
         }
         int packetId = msg.variableHeader().messageId();
         OutstandingVirtualPacket packet = outstandingVirtualPacketContainer.remove(packetId);
-        if (packet != null && packet.getPulsarConsumer() != null && packet.getPulsarConsumer().isConnected()) {
+        if (packet != null && packet.getConsumer() != null && packet.getConsumer().isConnected()) {
             try {
-                packet.getPulsarConsumer().acknowledge(packet.getMessageId());
+                packet.getConsumer().acknowledge(packet.getMessageId());
             } catch (Exception e) {
                 log.warn("Could not acknowledge message. {}", e.getMessage());
             }

@@ -45,7 +45,7 @@ public class MQTTVirtualConsumer {
 
     public ChannelPromise sendMessage(MqttPublishMessage msg, Consumer<byte[]> pulsarConsumer, int packetId, MessageId messageId) {
         if (MqttQoS.AT_MOST_ONCE != qos) {
-            outstandingVirtualPacketContainer.add(new OutstandingVirtualPacket(this, pulsarConsumer, packetId, messageId));
+            outstandingVirtualPacketContainer.add(new OutstandingVirtualPacket(pulsarConsumer, packetId, messageId));
         }
 
         ChannelPromise promise = cnx.ctx().newPromise();

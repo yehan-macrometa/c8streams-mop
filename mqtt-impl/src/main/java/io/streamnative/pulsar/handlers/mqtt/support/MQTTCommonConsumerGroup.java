@@ -82,10 +82,6 @@ public class MQTTCommonConsumerGroup {
         }
     }
 
-    public void acknowledgeMessage(MessageId messageId) {
-        consumers.forEach(c -> c.acknowledgeMessage(messageId));
-    }
-
     public void close() {
         deadLetterConsumer.close();
         for (MQTTCommonConsumer commonConsumer : consumers) {

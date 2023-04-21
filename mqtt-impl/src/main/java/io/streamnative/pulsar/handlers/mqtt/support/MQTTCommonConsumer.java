@@ -167,24 +167,6 @@ public class MQTTCommonConsumer {
         }
     }
 
-    public void acknowledgeMessage(MessageId messageId) {
-        ackExecutor.submit(() -> {
-            try {
-                ack(messageId);
-            } catch (Exception e) {
-                log.warn("Could not acknowledge message. {}", e.getMessage());
-            }
-        });
-    }
-
-    private void ack(MessageId messageId) {
-        try {
-            consumer.acknowledge(messageId);
-        } catch (PulsarClientException e) {
-            log.error("Could not acknowledge the message {}.", messageId);
-        }
-    }
-
     public void close() {
         log.info("[Common Consumer] Close a common consumer # {} for pulsar topic = {}", index, consumer.getTopic());
         // close common consumer
