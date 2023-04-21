@@ -46,6 +46,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Collectors;
 
+import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.pulsar.broker.PulsarService;
@@ -70,6 +71,8 @@ public class MQTTProxyProtocolMethodProcessor implements ProtocolMethodProcessor
     // Map sequence Id -> topic count
     private final ConcurrentHashMap<Integer, AtomicInteger> topicCountForSequenceId;
     private final MQTTConnectionManager connectionManager;
+    @Getter
+    private final Map<Integer, String> packetIdTopic;
 
     public MQTTProxyProtocolMethodProcessor(MQTTProxyService proxyService, MQTTProxyHandler proxyHandler) {
         this.proxyService = proxyService;
@@ -82,6 +85,7 @@ public class MQTTProxyProtocolMethodProcessor implements ProtocolMethodProcessor
         this.topicBrokers = new ConcurrentHashMap<>();
         this.brokerPool = new ConcurrentHashMap<>();
         this.topicCountForSequenceId = new ConcurrentHashMap<>();
+        this.packetIdTopic = new ConcurrentHashMap<>();
     }
 
     // client -> proxy
@@ -133,6 +137,36 @@ public class MQTTProxyProtocolMethodProcessor implements ProtocolMethodProcessor
         if (log.isDebugEnabled()) {
             log.debug("[Proxy PubAck] [{}]", NettyUtils.getClientId(channel));
         }
+        final int packetId = msg.variableHeader().messageId();
+        String topicName = packetIdTopic.remove(packetId);
+        final String topic;
+        if (proxyConfig.getSharder() != null) {
+            topic = proxyConfig.getSharder().getShardId(topicName);
+            if (log.isDebugEnabled()) {
+                log.debug("[Proxy PubAck] ack topic = {} to real topic = {}, CId={}",
+                        topicName, topic, NettyUtils.getClientId(channel));
+            }
+        } else {
+            topic = topicName;
+        }
+        String pulsarTopicName = PulsarTopicUtils.getEncodedPulsarTopicName(topic,
+                proxyConfig.getDefaultTenant(), proxyConfig.getDefaultNamespace(),
+                TopicDomain.getEnum(proxyConfig.getDefaultTopicDomain()));
+        CompletableFuture<InetSocketAddress> lookupResult = lookupHandler.findBroker(
+                TopicName.get(pulsarTopicName));
+        lookupResult.whenComplete((brokerAddress, throwable) -> {
+            if (null != throwable) {
+                ReferenceCountUtil.safeRelease(msg);
+                log.error("[Proxy Publish] Failed to perform lookup request for topic : {}, CId : {}",
+                        topic, NettyUtils.getClientId(channel), throwable);
+                channel.close();
+                return;
+            }
+            if (log.isDebugEnabled()) {
+                log.info("[Proxy Publish] Proxy redirects topic {} to broker {}", topic, brokerAddress);
+            }
+            writeToMqttBroker(channel, msg, pulsarTopicName, brokerAddress);
+        });
     }
 
     // proxy -> MoP
