@@ -343,7 +343,7 @@ public class MQTTProxyProtocolMethodProcessor implements ProtocolMethodProcessor
                 channel.close();
                 exchanger.close();
             }
-            ReferenceCountUtil.safeRelease(msg);
+//            ReferenceCountUtil.safeRelease(msg);
         });
     }
 
