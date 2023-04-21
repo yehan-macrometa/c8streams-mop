@@ -1,6 +1,8 @@
 package io.streamnative.pulsar.handlers.mqtt.support;
 
+import io.streamnative.pulsar.handlers.mqtt.MQTTProtocolHandler;
 import io.streamnative.pulsar.handlers.mqtt.MQTTServerConfiguration;
+import io.streamnative.pulsar.handlers.mqtt.utils.PulsarTopicUtils;
 import org.apache.pulsar.broker.service.BrokerService;
 import org.apache.pulsar.broker.service.Topic;
 import org.apache.pulsar.client.api.Message;
@@ -9,7 +11,9 @@ import org.apache.pulsar.client.api.Producer;
 import org.apache.pulsar.client.api.PulsarClient;
 import org.apache.pulsar.client.api.PulsarClientException;
 
+import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutionException;
@@ -34,9 +38,30 @@ public class MQTTPublisherContext {
                     .ioThreads(numThreads)
                     .listenerThreads(numThreads)
                     .build();
+
+            initProducers(brokerService, serverConfiguration);
         } catch (PulsarClientException e) {
             throw new RuntimeException(e);
         }
+    }
+
+    private void initProducers(BrokerService brokerService, MQTTServerConfiguration serverConfiguration) {
+        List<String> topics = MQTTProtocolHandler.getRealTopics(serverConfiguration.getMqttRealTopicNamePrefix(),
+                serverConfiguration.getMqttRealTopicCount());
+        if (topics == null) {
+            return;
+        }
+        topics.forEach(topic -> {
+            try {
+                Optional<Boolean> redirect = PulsarTopicUtils.isTopicRedirect(brokerService.getPulsar(), topic, serverConfiguration.getDefaultTenant(), serverConfiguration.getDefaultNamespace(), true
+                        , serverConfiguration.getDefaultTopicDomain()).get();
+                if (!redirect.orElse(true)) {
+                    getProducer(topic).get();
+                }
+            } catch (InterruptedException | ExecutionException e) {
+                throw new RuntimeException(e);
+            }
+        });
     }
 
     public static void init(BrokerService brokerService, MQTTServerConfiguration serverConfiguration) {

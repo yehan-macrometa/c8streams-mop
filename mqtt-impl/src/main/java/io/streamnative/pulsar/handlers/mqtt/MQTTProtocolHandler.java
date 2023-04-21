@@ -170,11 +170,18 @@ public class MQTTProtocolHandler implements ProtocolHandler {
         if (mqttRealTopicCount < 1) {
             return null;
         }
-        List<String> shardIds = IntStream.range(0, mqttRealTopicCount)
-            .mapToObj(i -> String.format("%s_%d", mqttRealTopicNamePrefix, i))
-            .collect(Collectors.toList());
+        List<String> shardIds = getRealTopics(mqttRealTopicNamePrefix, mqttRealTopicCount);
         log.info("List of real topics: {}", String.join(", ", shardIds));
         return new ConsistentHashSharder(1000, shardIds);
+    }
+
+    public static List<String> getRealTopics(String mqttRealTopicNamePrefix, int mqttRealTopicCount) {
+        if (mqttRealTopicCount < 1) {
+            return null;
+        }
+        return IntStream.range(0, mqttRealTopicCount)
+                .mapToObj(i -> String.format("%s_%d", mqttRealTopicNamePrefix, i))
+                .collect(Collectors.toList());
     }
 
     @Override
