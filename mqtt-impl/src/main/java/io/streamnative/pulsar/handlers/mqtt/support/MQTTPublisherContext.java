@@ -29,7 +29,7 @@ public class MQTTPublisherContext {
 
         try {
             client = PulsarClient.builder()
-                    .serviceUrl("pulsar://localhost:6650")
+                    .serviceUrl("pulsar://c8streams-broker.c8.svc.cluster.local:6650")
                     .authentication(
                             brokerService.getPulsar().getConfiguration().getBrokerClientAuthenticationPlugin(),
                             brokerService.getPulsar().getConfiguration().getBrokerClientAuthenticationParameters())
