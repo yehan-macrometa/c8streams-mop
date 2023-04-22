@@ -205,7 +205,7 @@ public class MQTTService {
         }
     }
 
-    private void checkAndCloseCommonConsumers(NamespaceName namespace) {
+    private synchronized void checkAndCloseCommonConsumers(NamespaceName namespace) {
         Set<Map.Entry<String, List<MQTTCommonConsumer>>> entries = commonConsumersMap.entrySet();
         for (Map.Entry<String, List<MQTTCommonConsumer>> entry : entries) {
 
