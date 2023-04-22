@@ -146,17 +146,26 @@ public class MQTTService {
                         subscribersCount = 1;
                     }
 
+                    Exception exception = null;
                     for (int i = 0; i < subscribersCount; i++) {
                         try {
                             MQTTCommonConsumer commonConsumer = new MQTTCommonConsumer(realTopicName, "common_" + i, i, orderedSendExecutor, ackExecutor, client);
                             log.info("MqttVirtualTopics: Common consumer #{} for real topic {} initialized", i, realTopicName);
                             consumers.add(commonConsumer);
-                        } catch (Exception e) {
+                        } catch (PulsarClientException e) {
                             log.error("Could not create common consumer", e);
+                            exception = e;
+                            break;
                         }
                     }
-                    commonConsumersMap.put(realTopicName, consumers);
-                    future.complete(consumers);
+
+                    if (exception == null) {
+                        commonConsumersMap.put(realTopicName, consumers);
+                        future.complete(consumers);
+                    } else {
+                        consumers.forEach(MQTTCommonConsumer::close);
+                        future.completeExceptionally(exception);
+                    }
                 }
             }
         }

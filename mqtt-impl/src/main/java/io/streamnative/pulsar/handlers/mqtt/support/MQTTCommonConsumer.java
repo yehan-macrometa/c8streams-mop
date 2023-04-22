@@ -59,25 +59,21 @@ public class MQTTCommonConsumer {
     private Consumer<byte[]> consumer;
 
     public MQTTCommonConsumer(/*Subscription subscription, */String pulsarTopicName, String consumerName, int index,
-                              OrderedExecutor orderedSendExecutor, ExecutorService ackExecutor, PulsarClient client) {
+                              OrderedExecutor orderedSendExecutor, ExecutorService ackExecutor, PulsarClient client) throws PulsarClientException {
         this.index = index;
         /*this.subscription = subscription;*/
         this.orderedSendExecutor = orderedSendExecutor;
         this.ackExecutor = ackExecutor;
 
-        try {
-            consumer = client.newConsumer()
-                    .consumerName(consumerName)
-                    .topic(pulsarTopicName)
-                    .subscriptionName("commonSub")
-                    .subscriptionType(SubscriptionType.Shared)
-                    .subscriptionInitialPosition(SubscriptionInitialPosition.Earliest)
-                    .messageListener(this::sendMessages)
-                    .receiverQueueSize(100_000)
-                    .subscribe();
-        } catch (PulsarClientException e) {
-            log.error("Could not create common consumer.", e);
-        }
+        consumer = client.newConsumer()
+                .consumerName(consumerName)
+                .topic(pulsarTopicName)
+                .subscriptionName("commonSub")
+                .subscriptionType(SubscriptionType.Shared)
+                .subscriptionInitialPosition(SubscriptionInitialPosition.Earliest)
+                .messageListener(this::sendMessages)
+                .receiverQueueSize(100_000)
+                .subscribe();
 
         // TODO: Use ScheduledExecutor and clean this part.
 //        new Thread(() -> {
