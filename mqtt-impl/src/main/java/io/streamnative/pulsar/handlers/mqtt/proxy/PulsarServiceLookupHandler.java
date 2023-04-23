@@ -62,15 +62,11 @@ public class PulsarServiceLookupHandler implements LookupHandler {
     @Override
     public CompletableFuture<InetSocketAddress> findBroker(TopicName topicName) {
         CompletableFuture<InetSocketAddress> lookupResult = new CompletableFuture<>();
-        /*CompletableFuture<Pair<InetSocketAddress, InetSocketAddress>> lookup =
-                pulsarClient.getLookup().getBroker(topicName);*/
-        // more efficient lookup than `pulsarClient.getLookup().getBroker(topicName);` because calls internally
-        CompletableFuture<Optional<InetSocketAddress>> brokerUrl = PulsarTopicUtils.getBrokerUrl(pulsarService, topicName.getLocalName(), proxyConfig.getDefaultTenant(),
-            proxyConfig.getDefaultNamespace(), false,
-            proxyConfig.getDefaultTopicDomain());
+        CompletableFuture<Pair<InetSocketAddress, InetSocketAddress>> lookup =
+                pulsarClient.getLookup().getBroker(topicName);
 
-        brokerUrl.whenComplete((brokerOp, throwable) -> {
-            if (null != throwable || !brokerOp.isPresent()) {
+        lookup.whenComplete((pair, throwable) -> {
+            if (null != throwable) {
                 log.error("Failed to perform lookup request for topic {}", topicName, throwable);
                 lookupResult.completeExceptionally(throwable);
             } else {
@@ -86,14 +82,14 @@ public class PulsarServiceLookupHandler implements LookupHandler {
                             try {
                                 Optional<LocalBrokerData> op = future.get();
                                 if (op.isPresent()
-                                    && op.get().getPulsarServiceUrl().equals("pulsar://" + brokerOp.get().toString())
-                                    && op.get().getProtocol(protocolHandlerName).isPresent()) {
+                                        && op.get().getPulsarServiceUrl().equals("pulsar://" + pair.getLeft().toString())
+                                        && op.get().getProtocol(protocolHandlerName).isPresent()) {
                                     String mqttBrokerUrl = op.get().getProtocol(protocolHandlerName).get();
                                     String[] splits = mqttBrokerUrl.split(":");
                                     String port = splits[splits.length - 1];
                                     int mqttBrokerPort = Integer.parseInt(port);
                                     lookupResult.complete(InetSocketAddress.createUnresolved(
-                                        brokerOp.get().getHostName(), mqttBrokerPort));
+                                            pair.getLeft().getHostName(), mqttBrokerPort));
                                     foundOwner = true;
                                     break;
                                 }
