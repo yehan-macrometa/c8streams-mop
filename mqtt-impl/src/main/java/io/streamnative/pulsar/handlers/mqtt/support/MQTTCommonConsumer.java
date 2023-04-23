@@ -100,12 +100,17 @@ public class MQTTCommonConsumer {
 
             if (StringUtil.isNullOrEmpty(virtualTopic)) {
                 log.warn("[{}] Virtual topic name is empty for message {}.", consumer.getConsumerName(), msg.getMessageId());
+                log.info("ConsumerDebug: [{}-{}] Virtual topic name is empty.", consumer.getTopic(), consumer.getConsumerName());
                 return;
             }
 
             List<MQTTVirtualConsumer> topicConsumers = consumers.get(virtualTopic);
 
             if (topicConsumers != null && topicConsumers.size() > 0) {
+                log.info("ConsumerDebug: [{}-{}] Found {} virtual consumers for {}.", consumer.getTopic(),
+                        consumer.getConsumerName(), topicConsumers.size(), virtualTopic);
+                log.info("ConsumerDebug: [{}-{}] Managing virtual consumers for {} virtual topics.", consumer.getTopic(),
+                        consumer.getConsumerName(), consumers.size());
                 topicConsumers.forEach(mqttConsumer -> {
                     MqttPublishMessage message = MessageBuilder.publish()
                             .messageId(packetId)
@@ -150,8 +155,11 @@ public class MQTTCommonConsumer {
                         }
                     });
                 });
-            } else if (log.isDebugEnabled()) {
-                log.info("[Common Consumer] Common consumer is not connected for virtual topic = {}" + virtualTopic);
+            } else {
+                if (log.isDebugEnabled()) {
+                    log.info("[Common Consumer] Common consumer is not connected for virtual topic = {}" + virtualTopic);
+                }
+                log.info("ConsumerDebug: [{}-{}] No virtual consumer for {}.", consumer.getTopic(), consumer.getConsumerName(), virtualTopic);
             }
         } catch (Exception e) {
             log.warn("An error occurred while processing sendMessage. {}", e.getMessage());
@@ -166,9 +174,18 @@ public class MQTTCommonConsumer {
 
     public void remove(String mqttTopicName, MQTTVirtualConsumer consumer) {
         if (consumers.containsKey(mqttTopicName)) {
+            log.info("ConsumerDebug: [{}-{}] Removing virtual consumers for {}.", this.consumer.getTopic(),
+                    this.consumer.getConsumerName(), mqttTopicName);
+            log.info("ConsumerDebug: [{}-{}] Managing virtual consumers for {} virtual topics.", this.consumer.getTopic(),
+                    consumer.getConsumerName(), consumers.size());
             boolean result = consumers.get(mqttTopicName).remove(consumer);
             log.info("Try remove({}) virtual consumer from common #{} for virtual topic = {}, real topic = {}. left consumers = {}",
                 result, index, mqttTopicName, this.consumer.getTopic(), consumers.get(mqttTopicName).size());
+        } else {
+            log.info("ConsumerDebug: [{}-{}] No virtual consumers to remove for {}.", this.consumer.getTopic(),
+                    this.consumer.getConsumerName(), mqttTopicName);
+            log.info("ConsumerDebug: [{}-{}] Managing virtual consumers for {} virtual topics.", this.consumer.getTopic(),
+                    consumer.getConsumerName(), consumers.size());
         }
     }
 
