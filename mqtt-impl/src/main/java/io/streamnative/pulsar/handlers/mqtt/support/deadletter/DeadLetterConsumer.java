@@ -51,7 +51,6 @@ public class DeadLetterConsumer {
                 .topic(deadLetterTopic)
                 .subscriptionName("commonDltSub")
                 .subscriptionInitialPosition(SubscriptionInitialPosition.Earliest)
-                .enableRetry(true)
                 .deadLetterPolicy(DeadLetterPolicy.builder().maxRedeliverCount(10000).build())
                 .subscribe();
 

@@ -74,7 +74,6 @@ public class MQTTCommonConsumer {
                 .subscriptionInitialPosition(SubscriptionInitialPosition.Earliest)
                 .messageListener(this::sendMessage)
                 .receiverQueueSize(100_000)
-                .enableRetry(true)
                 .deadLetterPolicy(DeadLetterPolicy.builder().maxRedeliverCount(10000).build())
                 .subscribe();
 
