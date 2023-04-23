@@ -76,6 +76,8 @@ public class MQTTProxyProtocolMethodProcessor implements ProtocolMethodProcessor
     private final Map<Integer, String> packetIdTopic;
     private final Cache<String, CompletableFuture<InetSocketAddress>> lookupCache =
             Caffeine.newBuilder().expireAfterWrite(1, TimeUnit.MINUTES).build();
+    private final Cache<String, String> topicCache =
+            Caffeine.newBuilder().expireAfterWrite(1, TimeUnit.HOURS).build();
     private final Map<String, String> pulsarTopicCache = new ConcurrentHashMap<>();
 
     public MQTTProxyProtocolMethodProcessor(MQTTProxyService proxyService, MQTTProxyHandler proxyHandler) {
@@ -153,11 +155,11 @@ public class MQTTProxyProtocolMethodProcessor implements ProtocolMethodProcessor
         } else {
             topic = topicName;
         }
-        String pulsarTopicName = PulsarTopicUtils.getEncodedPulsarTopicName(topic,
-                proxyConfig.getDefaultTenant(), proxyConfig.getDefaultNamespace(),
-                TopicDomain.getEnum(proxyConfig.getDefaultTopicDomain()));
-        CompletableFuture<InetSocketAddress> lookupResult = lookupHandler.findBroker(
-                TopicName.get(pulsarTopicName));
+        String pulsarTopicName = topicCache.get(topic, t ->
+                PulsarTopicUtils.getEncodedPulsarTopicName(t, proxyConfig.getDefaultTenant(),
+                        proxyConfig.getDefaultNamespace(), TopicDomain.getEnum(proxyConfig.getDefaultTopicDomain())));
+        CompletableFuture<InetSocketAddress> lookupResult = lookupCache.get(pulsarTopicName, t1 ->
+                lookupHandler.findBroker(TopicName.get(pulsarTopicName)));
         lookupResult.whenComplete((brokerAddress, throwable) -> {
             if (null != throwable) {
                 ReferenceCountUtil.safeRelease(msg);
@@ -190,12 +192,11 @@ public class MQTTProxyProtocolMethodProcessor implements ProtocolMethodProcessor
         } else {
             topic = msg.variableHeader().topicName();
         }
-        CompletableFuture<InetSocketAddress> lookupResult = lookupCache.get(topic, t1 -> {
-            String pulsarTopicName = pulsarTopicCache.computeIfAbsent(t1, t2 ->
-                    PulsarTopicUtils.getEncodedPulsarTopicName(t2, proxyConfig.getDefaultTenant(),
-                    proxyConfig.getDefaultNamespace(), TopicDomain.getEnum(proxyConfig.getDefaultTopicDomain())));
-            return lookupHandler.findBroker(TopicName.get(pulsarTopicName));
-        });
+        String pulsarTopicName = topicCache.get(topic, t ->
+                PulsarTopicUtils.getEncodedPulsarTopicName(t, proxyConfig.getDefaultTenant(),
+                        proxyConfig.getDefaultNamespace(), TopicDomain.getEnum(proxyConfig.getDefaultTopicDomain())));
+        CompletableFuture<InetSocketAddress> lookupResult = lookupCache.get(pulsarTopicName, t ->
+                lookupHandler.findBroker(TopicName.get(t)));
         lookupResult.whenComplete((brokerAddress, throwable) -> {
             if (null != throwable) {
                 ReferenceCountUtil.safeRelease(msg);
@@ -207,7 +208,7 @@ public class MQTTProxyProtocolMethodProcessor implements ProtocolMethodProcessor
             if (log.isDebugEnabled()) {
                 log.info("[Proxy Publish] Proxy redirects topic {} to broker {}", topic, brokerAddress);
             }
-            writeToMqttBroker(channel, msg, pulsarTopicCache.get(topic), brokerAddress);
+            writeToMqttBroker(channel, msg, pulsarTopicName, brokerAddress);
         });
     }
 
