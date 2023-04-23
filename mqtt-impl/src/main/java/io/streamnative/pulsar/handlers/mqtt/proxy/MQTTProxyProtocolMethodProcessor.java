@@ -312,8 +312,11 @@ public class MQTTProxyProtocolMethodProcessor implements ProtocolMethodProcessor
         topicListFuture.thenCompose(topics -> {
             List<CompletableFuture<Void>> futures = new ArrayList<>();
             for (String topic : topics) {
-                CompletableFuture<InetSocketAddress> lookupResult = lookupCache.get(topic, t ->
-                        lookupHandler.findBroker(TopicName.get(t)));
+                String pulsarTopicName = topicCache.get(topic, t ->
+                        PulsarTopicUtils.getEncodedPulsarTopicName(t, proxyConfig.getDefaultTenant(),
+                                proxyConfig.getDefaultNamespace(), TopicDomain.getEnum(proxyConfig.getDefaultTopicDomain())));
+                CompletableFuture<InetSocketAddress> lookupResult = lookupCache.get(pulsarTopicName, t1 ->
+                        lookupHandler.findBroker(TopicName.get(pulsarTopicName)));
                 futures.add(lookupResult.thenAccept(brokerAddress -> {
                     if (log.isDebugEnabled()) {
                         log.info("[Proxy Subscribe] Proxy redirects topic {} to broker {}", topic, brokerAddress.getHostString());
