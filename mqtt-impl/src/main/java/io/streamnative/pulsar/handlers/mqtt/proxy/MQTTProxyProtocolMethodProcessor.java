@@ -15,6 +15,9 @@ package io.streamnative.pulsar.handlers.mqtt.proxy;
 
 import static io.streamnative.pulsar.handlers.mqtt.utils.MqttMessageUtils.pingReq;
 import static io.streamnative.pulsar.handlers.mqtt.utils.MqttMessageUtils.pingResp;
+
+import com.github.benmanes.caffeine.cache.Cache;
+import com.github.benmanes.caffeine.cache.Caffeine;
 import io.netty.channel.Channel;
 import io.netty.handler.codec.mqtt.MqttConnAckMessage;
 import io.netty.handler.codec.mqtt.MqttConnectMessage;
@@ -24,7 +27,6 @@ import io.netty.handler.codec.mqtt.MqttMessage;
 import io.netty.handler.codec.mqtt.MqttPubAckMessage;
 import io.netty.handler.codec.mqtt.MqttPublishMessage;
 import io.netty.handler.codec.mqtt.MqttSubscribeMessage;
-import io.netty.handler.codec.mqtt.MqttTopicSubscription;
 import io.netty.handler.codec.mqtt.MqttUnsubscribeMessage;
 import io.netty.util.ReferenceCountUtil;
 import io.streamnative.pulsar.handlers.mqtt.Connection;
@@ -36,13 +38,12 @@ import io.streamnative.pulsar.handlers.mqtt.utils.NettyUtils;
 import io.streamnative.pulsar.handlers.mqtt.utils.PulsarTopicUtils;
 import java.net.InetSocketAddress;
 import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Collectors;
 
@@ -73,6 +74,9 @@ public class MQTTProxyProtocolMethodProcessor implements ProtocolMethodProcessor
     private final MQTTConnectionManager connectionManager;
     @Getter
     private final Map<Integer, String> packetIdTopic;
+    private final Cache<String, CompletableFuture<InetSocketAddress>> lookupCache =
+            Caffeine.newBuilder().expireAfterWrite(1, TimeUnit.MINUTES).build();
+    private final Map<String, String> pulsarTopicCache = new ConcurrentHashMap<>();
 
     public MQTTProxyProtocolMethodProcessor(MQTTProxyService proxyService, MQTTProxyHandler proxyHandler) {
         this.proxyService = proxyService;
@@ -186,11 +190,12 @@ public class MQTTProxyProtocolMethodProcessor implements ProtocolMethodProcessor
         } else {
             topic = msg.variableHeader().topicName();
         }
-        String pulsarTopicName = PulsarTopicUtils.getEncodedPulsarTopicName(topic,
-                proxyConfig.getDefaultTenant(), proxyConfig.getDefaultNamespace(),
-                TopicDomain.getEnum(proxyConfig.getDefaultTopicDomain()));
-        CompletableFuture<InetSocketAddress> lookupResult = lookupHandler.findBroker(
-                TopicName.get(pulsarTopicName));
+        CompletableFuture<InetSocketAddress> lookupResult = lookupCache.get(topic, t1 -> {
+            String pulsarTopicName = pulsarTopicCache.computeIfAbsent(t1, t2 ->
+                    PulsarTopicUtils.getEncodedPulsarTopicName(t2, proxyConfig.getDefaultTenant(),
+                    proxyConfig.getDefaultNamespace(), TopicDomain.getEnum(proxyConfig.getDefaultTopicDomain())));
+            return lookupHandler.findBroker(TopicName.get(pulsarTopicName));
+        });
         lookupResult.whenComplete((brokerAddress, throwable) -> {
             if (null != throwable) {
                 ReferenceCountUtil.safeRelease(msg);
@@ -202,7 +207,7 @@ public class MQTTProxyProtocolMethodProcessor implements ProtocolMethodProcessor
             if (log.isDebugEnabled()) {
                 log.info("[Proxy Publish] Proxy redirects topic {} to broker {}", topic, brokerAddress);
             }
-            writeToMqttBroker(channel, msg, pulsarTopicName, brokerAddress);
+            writeToMqttBroker(channel, msg, pulsarTopicCache.get(topic), brokerAddress);
         });
     }
 
@@ -306,7 +311,8 @@ public class MQTTProxyProtocolMethodProcessor implements ProtocolMethodProcessor
         topicListFuture.thenCompose(topics -> {
             List<CompletableFuture<Void>> futures = new ArrayList<>();
             for (String topic : topics) {
-                CompletableFuture<InetSocketAddress> lookupResult = lookupHandler.findBroker(TopicName.get(topic));
+                CompletableFuture<InetSocketAddress> lookupResult = lookupCache.get(topic, t ->
+                        lookupHandler.findBroker(TopicName.get(t)));
                 futures.add(lookupResult.thenAccept(brokerAddress -> {
                     if (log.isDebugEnabled()) {
                         log.info("[Proxy Subscribe] Proxy redirects topic {} to broker {}", topic, brokerAddress.getHostString());
