@@ -54,9 +54,10 @@ public class MQTTProxyService implements Closeable {
     private DefaultThreadFactory acceptorThreadFactory = new DefaultThreadFactory("mqtt-redirect-acceptor");
     private DefaultThreadFactory workerThreadFactory = new DefaultThreadFactory("mqtt-redirect-io");
 
-    public MQTTProxyService(MQTTService mqttService, MQTTProxyConfiguration proxyConfig) {
+    public MQTTProxyService(MQTTService mqttService, PulsarServiceLookupHandler lookupHandler, MQTTProxyConfiguration proxyConfig) {
         configValid(proxyConfig);
         this.pulsarService = mqttService.getPulsarService();
+        this.lookupHandler = lookupHandler;
         this.proxyConfig = proxyConfig;
         this.authenticationService = mqttService.getAuthenticationService();
         this.connectionManager = new MQTTConnectionManager();
@@ -80,11 +81,13 @@ public class MQTTProxyService implements Closeable {
         EventLoopUtil.enableTriggeredMode(serverBootstrap);
         serverBootstrap.childHandler(new MQTTProxyChannelInitializer(this, proxyConfig, false));
 
-        try {
-            listenChannel = serverBootstrap.bind(proxyConfig.getMqttProxyPort()).sync().channel();
-            log.info("Started MQTT Proxy on {}", listenChannel.localAddress());
-        } catch (InterruptedException e) {
-            throw new MQTTProxyException(e);
+        if (proxyConfig.isMqttProxyEnabled()) {
+            try {
+                listenChannel = serverBootstrap.bind(proxyConfig.getMqttProxyPort()).sync().channel();
+                log.info("Started MQTT Proxy on {}", listenChannel.localAddress());
+            } catch (InterruptedException e) {
+                throw new MQTTProxyException(e);
+            }
         }
 
         if (proxyConfig.isMqttProxyTlsEnabled()) {
@@ -108,8 +111,6 @@ public class MQTTProxyService implements Closeable {
                 throw new MQTTProxyException(e);
             }
         }
-
-        this.lookupHandler = new PulsarServiceLookupHandler(pulsarService, proxyConfig);
     }
 
     @Override

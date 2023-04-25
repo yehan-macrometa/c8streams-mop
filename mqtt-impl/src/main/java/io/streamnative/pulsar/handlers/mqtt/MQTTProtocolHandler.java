@@ -24,7 +24,9 @@ import com.google.common.collect.ImmutableMap;
 import io.netty.channel.ChannelInitializer;
 import io.netty.channel.socket.SocketChannel;
 import io.streamnative.pulsar.handlers.mqtt.proxy.MQTTProxyConfiguration;
+import io.streamnative.pulsar.handlers.mqtt.proxy.MQTTProxyException;
 import io.streamnative.pulsar.handlers.mqtt.proxy.MQTTProxyService;
+import io.streamnative.pulsar.handlers.mqtt.proxy.PulsarServiceLookupHandler;
 import io.streamnative.pulsar.handlers.mqtt.sharding.ConsistentHashSharder;
 import io.streamnative.pulsar.handlers.mqtt.sharding.Sharder;
 import io.streamnative.pulsar.handlers.mqtt.utils.ConfigurationUtils;
@@ -61,6 +63,8 @@ public class MQTTProtocolHandler implements ProtocolHandler {
 
     @Getter
     private MQTTService mqttService;
+
+    private PulsarServiceLookupHandler lookupHandler;
 
     @Override
     public String protocolName() {
@@ -103,12 +107,16 @@ public class MQTTProtocolHandler implements ProtocolHandler {
         this.brokerService = brokerService;
         mqttService = new MQTTService(brokerService, mqttConfig);
 
+        PulsarServiceLookupHandler lookupHandler = null;
+
+
         if (mqttConfig.isMqttProxyEnabled() || mqttConfig.isMqttProxyEnable()) {
             Arrays.stream(mqttConfig.getMqttProxyPorts().split(",")).map(Integer::parseInt).forEach(port -> {
                 MQTTProxyConfiguration proxyConfig = createProxyConf();
                 proxyConfig.setMqttProxyPort(port);
-                proxyService = new MQTTProxyService(mqttService, proxyConfig);
+                proxyConfig.setMqttProxyEnabled(true);
                 try {
+                    proxyService = new MQTTProxyService(mqttService, getLookupHandler(proxyConfig), proxyConfig);
                     proxyService.start();
                     log.info("Start MQTT proxy service at port: {}", proxyConfig.getMqttProxyPort());
                 } catch (Exception ex) {
@@ -121,8 +129,9 @@ public class MQTTProtocolHandler implements ProtocolHandler {
             Arrays.stream(mqttConfig.getMqttProxyTlsPorts().split(",")).map(Integer::parseInt).forEach(port -> {
                 MQTTProxyConfiguration proxyConfig = createProxyConf();
                 proxyConfig.setMqttProxyTlsPort(port);
-                proxyService = new MQTTProxyService(mqttService, proxyConfig);
+                proxyConfig.setMqttProxyTlsEnabled(true);
                 try {
+                    proxyService = new MQTTProxyService(mqttService, getLookupHandler(proxyConfig), proxyConfig);
                     proxyService.start();
                     log.info("Start MQTT proxy service at port: {}", proxyConfig.getMqttProxyPort());
                 } catch (Exception ex) {
@@ -135,8 +144,9 @@ public class MQTTProtocolHandler implements ProtocolHandler {
             Arrays.stream(mqttConfig.getMqttProxyTlsPorts().split(",")).map(Integer::parseInt).forEach(port -> {
                 MQTTProxyConfiguration proxyConfig = createProxyConf();
                 proxyConfig.setMqttProxyTlsPskPort(port);
-                proxyService = new MQTTProxyService(mqttService, proxyConfig);
+                proxyConfig.setMqttProxyTlsEnabled(true);
                 try {
+                    proxyService = new MQTTProxyService(mqttService, getLookupHandler(proxyConfig), proxyConfig);
                     proxyService.start();
                     log.info("Start MQTT proxy service at port: {}", proxyConfig.getMqttProxyPort());
                 } catch (Exception ex) {
@@ -153,6 +163,13 @@ public class MQTTProtocolHandler implements ProtocolHandler {
                 MopVersion.getBuildTime());
     }
 
+    private PulsarServiceLookupHandler getLookupHandler( MQTTProxyConfiguration proxyConfig) throws MQTTProxyException {
+        if (lookupHandler == null) {
+            lookupHandler = new PulsarServiceLookupHandler(mqttService.getPulsarService(), proxyConfig);
+        }
+        return lookupHandler;
+    }
+
     private MQTTProxyConfiguration createProxyConf() {
         MQTTProxyConfiguration proxyConfig = new MQTTProxyConfiguration();
         proxyConfig.setDefaultTenant(mqttConfig.getDefaultTenant());
@@ -162,8 +179,8 @@ public class MQTTProtocolHandler implements ProtocolHandler {
         //proxyConfig.setMqttProxyPort(mqttConfig.getMqttProxyPort());
         //proxyConfig.setMqttProxyTlsPort(mqttConfig.getMqttProxyTlsPort());
         //proxyConfig.setMqttProxyTlsPskPort(mqttConfig.getMqttProxyTlsPskPort());
-        proxyConfig.setMqttProxyTlsEnabled(mqttConfig.isMqttProxyTlsEnabled());
-        proxyConfig.setMqttProxyTlsPskEnabled(mqttConfig.isMqttProxyTlsPskEnabled());
+        //proxyConfig.setMqttProxyTlsEnabled(mqttConfig.isMqttProxyTlsEnabled());
+        //proxyConfig.setMqttProxyTlsPskEnabled(mqttConfig.isMqttProxyTlsPskEnabled());
         proxyConfig.setBrokerServiceURL("pulsar://"
             + ServiceConfigurationUtils.getAppliedAdvertisedAddress(mqttConfig, true)
             + ":" + mqttConfig.getBrokerServicePort().get());
