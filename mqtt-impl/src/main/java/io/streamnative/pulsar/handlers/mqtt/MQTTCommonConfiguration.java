@@ -15,8 +15,13 @@ package io.streamnative.pulsar.handlers.mqtt;
 
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.Sets;
+
+import java.util.Collection;
+import java.util.Collections;
 import java.util.List;
 import java.util.Set;
+import java.util.stream.Collectors;
+import java.util.stream.IntStream;
 
 import io.streamnative.pulsar.handlers.mqtt.sharding.Sharder;
 import lombok.Getter;
@@ -321,5 +326,20 @@ public class MQTTCommonConfiguration extends ServiceConfiguration {
      * Executor responsible for publishing messages
      */
     private OrderedExecutor orderedPublishExecutor;
+
+    private List<String> allRealTopics;
+
+    public List<String> getAllRealTopics() {
+        if (allRealTopics == null) {
+            if (mqttRealTopicCount < 1) {
+                allRealTopics = Collections.EMPTY_LIST;
+            } else {
+                allRealTopics = IntStream.range(0, mqttRealTopicCount)
+                    .mapToObj(i -> String.format("%s_%d", mqttRealTopicNamePrefix, i))
+                    .collect(Collectors.toList());
+            }
+        }
+        return allRealTopics;
+    }
 
 }

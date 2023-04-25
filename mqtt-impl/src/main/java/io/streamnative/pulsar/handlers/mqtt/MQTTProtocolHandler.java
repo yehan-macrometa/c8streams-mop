@@ -81,7 +81,7 @@ public class MQTTProtocolHandler implements ProtocolHandler {
             // when loaded with PulsarService as NAR, `conf` will be type of ServiceConfiguration
             mqttConfig = ConfigurationUtils.create(conf.getProperties(), MQTTServerConfiguration.class);
         }
-        mqttConfig.setSharder(initSharder(mqttConfig.getMqttRealTopicNamePrefix(), mqttConfig.getMqttRealTopicCount()));
+        mqttConfig.setSharder(initSharder(mqttConfig.getAllRealTopics()));
         mqttConfig.setOrderedPublishExecutor(OrderedExecutor.newBuilder()
                 .name("mqtt-pulsar-producer")
                 .numThreads(50)
@@ -166,15 +166,11 @@ public class MQTTProtocolHandler implements ProtocolHandler {
                 MopVersion.getBuildTime());
     }
 
-    private static Sharder initSharder(String mqttRealTopicNamePrefix, int mqttRealTopicCount) {
-        if (mqttRealTopicCount < 1) {
+    private static Sharder initSharder(List<String> allRealTopics) {
+        if (allRealTopics.isEmpty()) {
             return null;
         }
-        List<String> shardIds = IntStream.range(0, mqttRealTopicCount)
-            .mapToObj(i -> String.format("%s_%d", mqttRealTopicNamePrefix, i))
-            .collect(Collectors.toList());
-        log.info("List of real topics: {}", String.join(", ", shardIds));
-        return new ConsistentHashSharder(1000, shardIds);
+        return new ConsistentHashSharder(1000, allRealTopics);
     }
 
     @Override

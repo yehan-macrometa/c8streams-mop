@@ -81,6 +81,7 @@ public class MQTTService {
     private final ExecutorService dltExecutor;
     private final PulsarClient client;
     private final ScheduledExecutorService scheduledExecutor;
+    private static final String POLICY_ROOT = "/admin/policies/";
 
     public MQTTService(BrokerService brokerService, MQTTServerConfiguration serverConfiguration) {
         this.brokerService = brokerService;
@@ -125,6 +126,44 @@ public class MQTTService {
         } catch (PulsarClientException e) {
             throw new RuntimeException(e);
         }
+
+        // TODO: It works for single broker, because here doesn't check which topic to which broker belongs
+        /*ackExecutor.execute(() -> {
+            TopicName maskTopic = TopicName.get(serverConfiguration.getMqttRealTopicNamePrefix());
+            Policies policies = null;
+            while (policies == null) {
+                try {
+                    Optional<Policies> policiesOp = pulsarService.getPulsarResources().getNamespaceResources()
+                        .get(POLICY_ROOT + maskTopic.getNamespace());
+                    if (policiesOp.isPresent()) {
+                        policies = policiesOp.get();
+                    }
+                } catch (MetadataStoreException e) {
+                    log.warn("Failed to retrieve policies for namespace = {}", maskTopic.getNamespace());
+                }
+                log.warn("Unable to retrieve policies for namespace = {}. Wait 5 second for retry...", maskTopic.getNamespace());
+                try {
+                    Thread.sleep(5000L);
+                } catch (InterruptedException e) {}
+            }
+
+            log.info("Successfully namespace = {} created! Initialising MQTT Common Consumer Groups", maskTopic.getNamespace());
+
+            for (String pulsarTopic : serverConfiguration.getAllRealTopics()) {
+                MQTTCommonConsumerGroup consumerGroup = null;
+                try {
+                    consumerGroup = new MQTTCommonConsumerGroup(client, orderedSendExecutor,
+                        ackExecutor, dltExecutor, pulsarTopic, serverConfiguration);
+                    commonConsumersMap.put(pulsarTopic, consumerGroup);
+                } catch (PulsarClientException e) {
+                    log.error("MQTT Consumer Group cannot be started for topic = {}", pulsarTopic, e);
+                }
+            }
+
+            log.info("Successfully Created All MQTT Common Consumer Groups!");
+
+        });*/
+
     }
 
     public CompletableFuture<MQTTCommonConsumerGroup> getCommonConsumers(String virtualTopicName) {
