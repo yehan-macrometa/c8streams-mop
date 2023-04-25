@@ -69,7 +69,7 @@ public class MQTTProxyService implements Closeable {
 
     private void configValid(MQTTProxyConfiguration proxyConfig) {
         checkNotNull(proxyConfig);
-        checkArgument(proxyConfig.getMqttProxyPort() > 0);
+//        checkArgument(proxyConfig.getMqttProxyPort() > 0);
         checkNotNull(proxyConfig.getDefaultTenant());
         checkNotNull(proxyConfig.getBrokerServiceURL());
     }
