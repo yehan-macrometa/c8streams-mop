@@ -133,7 +133,7 @@ public class MQTTProtocolHandler implements ProtocolHandler {
                 try {
                     proxyService = new MQTTProxyService(mqttService, getLookupHandler(proxyConfig), proxyConfig);
                     proxyService.start();
-                    log.info("Start MQTT proxy service at port: {}", proxyConfig.getMqttProxyPort());
+                    log.info("Start MQTT proxy service at port: {}", proxyConfig.getMqttProxyTlsPort());
                 } catch (Exception ex) {
                     log.error("Failed to start MQTT proxy service.", ex);
                 }
@@ -148,7 +148,7 @@ public class MQTTProtocolHandler implements ProtocolHandler {
                 try {
                     proxyService = new MQTTProxyService(mqttService, getLookupHandler(proxyConfig), proxyConfig);
                     proxyService.start();
-                    log.info("Start MQTT proxy service at port: {}", proxyConfig.getMqttProxyPort());
+                    log.info("Start MQTT proxy service at port: {}", proxyConfig.getMqttProxyTlsPskPort());
                 } catch (Exception ex) {
                     log.error("Failed to start MQTT proxy service.", ex);
                 }
