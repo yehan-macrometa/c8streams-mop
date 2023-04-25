@@ -354,12 +354,10 @@ public class DefaultProtocolMethodProcessorImpl implements ProtocolMethodProcess
                 List<CompletableFuture<Void>> futures = new ArrayList<>();
                 for (String topic : topics) {
                     CompletableFuture<Void> future = mqttService.getCommonConsumers(topic).thenAccept(consumerGroup -> {
-                        log.info("ConsumerDebug: Adding virtual consumer {} to {} common consumers. ", consumerGroup.getConsumers().size(), topic);
                         try {
                             MQTTVirtualConsumer consumer = new MQTTVirtualConsumer(topic, serverCnx,
                                 subTopic.qualityOfService(), packetIdGenerator, subTopic.topicName(), outstandingVirtualPacketContainer);
                             log.info("MqttVirtualTopics: Registering to common consumer {}", subTopic.topicName());
-                            log.info("ConsumerDebug: Added virtual consumer {} to common consumer. Common consumer now has {} virtual consumers.", topic, consumerGroup.getConsumers().size());
                             consumerGroup.add(subTopic.topicName(), consumer);
                             topicSubscriptions.putIfAbsent(subTopic.topicName(), Pair.of(consumerGroup, consumer));
                         } catch (Exception e) {

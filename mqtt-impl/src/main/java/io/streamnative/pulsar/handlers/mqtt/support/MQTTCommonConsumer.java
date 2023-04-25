@@ -98,17 +98,12 @@ public class MQTTCommonConsumer {
     private void sendMessage(Consumer<byte[]> consumer, Message<byte[]> msg) {
         String virtualTopic = msg.getProperty("virtualTopic");
         if (StringUtil.isNullOrEmpty(virtualTopic)) {
-            log.info("ConsumerDebug: [{}-{}] Virtual topic name is empty.", consumer.getTopic(), consumer.getConsumerName());
             return;
         }
 
         List<MQTTVirtualConsumer> topicConsumers = virtualConsumersMap.get(virtualTopic);
 
         if (topicConsumers != null && topicConsumers.size() > 0) {
-            log.info("ConsumerDebug: [{}-{}] Found {} virtual consumers for {}.", consumer.getTopic(),
-                consumer.getConsumerName(), topicConsumers.size(), virtualTopic);
-            log.info("ConsumerDebug: [{}-{}] Managing virtual consumers for {} virtual topics.", consumer.getTopic(),
-                consumer.getConsumerName(), virtualConsumersMap.size());
             topicConsumers.forEach(mqttConsumer -> {
                 orderedSendExecutor.executeOrdered(virtualTopic, () -> {
                     try {
@@ -152,7 +147,6 @@ public class MQTTCommonConsumer {
             if (log.isDebugEnabled()) {
                 log.info("[Common Consumer] Common consumer is not connected for virtual topic = {}" + virtualTopic);
             }
-            log.info("ConsumerDebug: [{}-{}] No virtual consumer for {}.", consumer.getTopic(), consumer.getConsumerName(), virtualTopic);
         }
         if (deadLetterProducer.readyToBeDead(msg)) {
             orderedSendExecutor.executeOrdered(virtualTopic, () -> {
