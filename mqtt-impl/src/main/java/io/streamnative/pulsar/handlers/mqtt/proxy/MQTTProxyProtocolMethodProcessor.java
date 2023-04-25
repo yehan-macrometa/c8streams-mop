@@ -78,7 +78,6 @@ public class MQTTProxyProtocolMethodProcessor implements ProtocolMethodProcessor
             Caffeine.newBuilder().expireAfterWrite(1, TimeUnit.MINUTES).build();
     private final Cache<String, String> topicCache =
             Caffeine.newBuilder().expireAfterWrite(1, TimeUnit.HOURS).build();
-    private final Map<String, String> pulsarTopicCache = new ConcurrentHashMap<>();
 
     public MQTTProxyProtocolMethodProcessor(MQTTProxyService proxyService, MQTTProxyHandler proxyHandler) {
         this.proxyService = proxyService;

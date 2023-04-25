@@ -15,9 +15,12 @@ package io.streamnative.pulsar.handlers.mqtt.proxy;
 
 import java.net.InetSocketAddress;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
+import java.util.stream.Collectors;
+
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.tuple.Pair;
 import org.apache.pulsar.broker.PulsarService;
@@ -78,10 +81,13 @@ public class PulsarServiceLookupHandler implements LookupHandler {
                                 if (op.isPresent()
                                         && op.get().getPulsarServiceUrl().equals("pulsar://" + pair.getLeft().toString())
                                         && op.get().getProtocol(protocolHandlerName).isPresent()) {
-                                    String mqttBrokerUrl = op.get().getProtocol(protocolHandlerName).get();
-                                    String[] splits = mqttBrokerUrl.split(":");
-                                    String port = splits[splits.length - 1];
-                                    int mqttBrokerPort = Integer.parseInt(port);
+                                    String[] mqttBrokerUrls = op.get().getProtocol(protocolHandlerName).get().split(",");
+                                    List<Integer> mqttPorts = Arrays.stream(mqttBrokerUrls).map(mqttBrokerUrl -> {
+                                        String[] splits = mqttBrokerUrl.split(":");
+                                        return Integer.parseInt(splits[splits.length - 1]);
+                                    }).collect(Collectors.toList());
+                                    // pick up random port
+                                    int mqttBrokerPort = mqttPorts.get((int)(Math.random() * mqttPorts.size()));
                                     lookupResult.complete(InetSocketAddress.createUnresolved(
                                             pair.getLeft().getHostName(), mqttBrokerPort));
                                     foundOwner = true;

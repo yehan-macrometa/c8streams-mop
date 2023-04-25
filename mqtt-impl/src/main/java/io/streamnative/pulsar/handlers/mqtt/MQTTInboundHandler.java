@@ -46,7 +46,6 @@ import java.util.Map;
 @Sharable
 @Slf4j
 public class MQTTInboundHandler extends ChannelInboundHandlerAdapter {
-    static List<MQTTCommonConsumer> commonConsumers = new CopyOnWriteArrayList<>();
 
     private ProtocolMethodProcessor processor;
 
