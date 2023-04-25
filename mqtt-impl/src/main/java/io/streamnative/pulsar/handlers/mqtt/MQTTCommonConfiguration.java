@@ -104,26 +104,37 @@ public class MQTTCommonConfiguration extends ServiceConfiguration {
     )
     private String defaultTopicDomain = "persistent";
 
-    @FieldContext(
-            category = CATEGORY_MQTT_PROXY,
-            required = false,
-            doc = "The mqtt proxy port"
-    )
-    private int mqttProxyPort = 5682;
+    private int mqttProxyPort;
 
     @FieldContext(
-            category = CATEGORY_MQTT_PROXY,
-            required = false,
-            doc = "The mqtt proxy tls port"
+        category = CATEGORY_MQTT_PROXY,
+        required = false,
+        doc = "The mqtt proxy ports, separator is ','"
     )
-    private int mqttProxyTlsPort = 5683;
+    private String mqttProxyPorts = "5682";
+
+    private int mqttProxyTlsPort;
+
+    @FieldContext(
+        category = CATEGORY_MQTT_PROXY,
+        required = false,
+        doc = "The mqtt proxy tls ports, separator is ','"
+    )
+    private String mqttProxyTlsPorts = "5683";
 
     @FieldContext(
             category = CATEGORY_MQTT_PROXY,
             required = false,
             doc = "The mqtt proxy tls psk port"
     )
-    private int mqttProxyTlsPskPort = 5684;
+    private int mqttProxyTlsPskPort;
+
+    @FieldContext(
+        category = CATEGORY_MQTT_PROXY,
+        required = false,
+        doc = "The mqtt proxy tls psk port, separator is ','"
+    )
+    private String mqttProxyTlsPskPorts = "5684";
 
     @FieldContext(
             category = CATEGORY_MQTT_PROXY,
