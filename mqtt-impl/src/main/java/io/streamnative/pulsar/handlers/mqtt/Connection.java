@@ -21,6 +21,7 @@ import io.netty.channel.Channel;
 import io.netty.handler.codec.mqtt.MqttConnAckMessage;
 import io.netty.handler.codec.mqtt.MqttConnectReturnCode;
 import io.streamnative.pulsar.handlers.mqtt.support.MQTTCommonConsumer;
+import io.streamnative.pulsar.handlers.mqtt.support.MQTTCommonConsumerGroup;
 import io.streamnative.pulsar.handlers.mqtt.support.MQTTVirtualConsumer;
 import io.streamnative.pulsar.handlers.mqtt.utils.MqttMessageUtils;
 import io.streamnative.pulsar.handlers.mqtt.utils.NettyUtils;
@@ -79,13 +80,13 @@ public class Connection {
     }
 
     public void removeConsumers() {
-        Map<String, List<Pair<MQTTCommonConsumer, MQTTVirtualConsumer>>> topicSubscriptions = NettyUtils
+        Map<String, Pair<MQTTCommonConsumerGroup, MQTTVirtualConsumer>> topicSubscriptions = NettyUtils
                 .getTopicSubscriptions(channel);
         // For producer doesn't bind subscriptions
         if (topicSubscriptions != null) {
             topicSubscriptions.forEach((k, v) -> {
                 try {
-                    v.forEach(p -> p.getKey().remove(k, p.getValue()));
+                    v.getKey().remove(k, v.getValue());
                 } catch (Exception ex) {
                     log.warn("Topic [{}] remove consumer error", k, ex);
                 }
@@ -96,15 +97,12 @@ public class Connection {
     public void removeSubscriptions() {
         removeConsumers();
         if (cleanSession) {
-            Map<String, List<Pair<MQTTCommonConsumer, MQTTVirtualConsumer>>> topicSubscriptions = NettyUtils
+            Map<String, Pair<MQTTCommonConsumerGroup, MQTTVirtualConsumer>> topicSubscriptions = NettyUtils
                     .getTopicSubscriptions(channel);
             // For producer doesn't bind subscriptions
             if (topicSubscriptions != null) {
-                topicSubscriptions.forEach((topic, consumerPairs) -> {
-                    consumerPairs.forEach(pair -> {
-                        pair.getLeft().remove(topic, pair.getRight());
-                    });
-                });
+                topicSubscriptions.forEach((topic, consumerPair) ->
+                    consumerPair.getLeft().remove(topic, consumerPair.getRight()));
             }
         }
     }

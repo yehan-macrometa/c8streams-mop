@@ -18,8 +18,6 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
-
-import io.streamnative.pulsar.handlers.mqtt.utils.PulsarTopicUtils;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.tuple.Pair;
 import org.apache.pulsar.broker.PulsarService;
@@ -44,13 +42,9 @@ public class PulsarServiceLookupHandler implements LookupHandler {
 
     private final PulsarClientImpl pulsarClient;
     private final MetadataCache<LocalBrokerData> localBrokerDataCache;
-    private final PulsarService pulsarService;
-    private final MQTTProxyConfiguration proxyConfig;
 
     public PulsarServiceLookupHandler(PulsarService pulsarService, MQTTProxyConfiguration proxyConfig)
             throws MQTTProxyException {
-        this.pulsarService = pulsarService;
-        this.proxyConfig = proxyConfig;
         this.localBrokerDataCache = pulsarService.getLocalMetadataStore().getMetadataCache(LocalBrokerData.class);
         try {
             this.pulsarClient = new PulsarClientImpl(createClientConfiguration(proxyConfig));

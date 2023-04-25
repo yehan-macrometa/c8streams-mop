@@ -32,6 +32,7 @@ import java.util.Map;
 import java.util.Optional;
 
 import io.streamnative.pulsar.handlers.mqtt.support.MQTTCommonConsumer;
+import io.streamnative.pulsar.handlers.mqtt.support.MQTTCommonConsumerGroup;
 import io.streamnative.pulsar.handlers.mqtt.support.MQTTVirtualConsumer;
 import org.apache.commons.lang3.tuple.Pair;
 import org.apache.pulsar.broker.service.Consumer;
@@ -84,12 +85,12 @@ public final class NettyUtils {
         channel.attr(NettyUtils.ATTR_KEY_CONNECT_MSG).set(connectMessage);
     }
 
-    public static void setTopicSubscriptions(Channel channel, Map<String, List<Pair<MQTTCommonConsumer, MQTTVirtualConsumer>>> topicSubs) {
+    public static void setTopicSubscriptions(Channel channel, Map<String, Pair<MQTTCommonConsumerGroup, MQTTVirtualConsumer>> topicSubs) {
         channel.attr(NettyUtils.ATTR_KEY_TOPIC_SUBS).set(topicSubs);
     }
 
-    public static Map<String, List<Pair<MQTTCommonConsumer, MQTTVirtualConsumer>>> getTopicSubscriptions(Channel channel) {
-        return (Map<String, List<Pair<MQTTCommonConsumer, MQTTVirtualConsumer>>>) channel.attr(NettyUtils.ATTR_KEY_TOPIC_SUBS).get();
+    public static Map<String, Pair<MQTTCommonConsumerGroup, MQTTVirtualConsumer>> getTopicSubscriptions(Channel channel) {
+        return (Map<String, Pair<MQTTCommonConsumerGroup, MQTTVirtualConsumer>>) channel.attr(NettyUtils.ATTR_KEY_TOPIC_SUBS).get();
     }
 
     public static Optional<MqttConnectMessage> getAndRemoveConnectMsg(Channel channel) {

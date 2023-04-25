@@ -29,6 +29,7 @@ import io.netty.handler.timeout.IdleState;
 import io.netty.handler.timeout.IdleStateEvent;
 import io.streamnative.pulsar.handlers.mqtt.support.DefaultProtocolMethodProcessorImpl;
 import io.streamnative.pulsar.handlers.mqtt.support.MQTTCommonConsumer;
+import io.streamnative.pulsar.handlers.mqtt.support.MQTTCommonConsumerGroup;
 import io.streamnative.pulsar.handlers.mqtt.support.MQTTVirtualConsumer;
 import io.streamnative.pulsar.handlers.mqtt.utils.NettyUtils;
 import lombok.Getter;
@@ -131,8 +132,8 @@ public class MQTTInboundHandler extends ChannelInboundHandlerAdapter {
                 ctx.channel(),
                 NettyUtils.getClientId(ctx.channel()),
                 cause);
-        Map<String, List<Pair<MQTTCommonConsumer, MQTTVirtualConsumer>>> topicCommonConsumer = NettyUtils.getTopicSubscriptions(ctx.channel());
-        topicCommonConsumer.forEach((k, v) -> v.forEach(p -> p.getKey().remove(k, p.getValue())));
+        Map<String, Pair<MQTTCommonConsumerGroup, MQTTVirtualConsumer>> topicCommonConsumer = NettyUtils.getTopicSubscriptions(ctx.channel());
+        topicCommonConsumer.forEach((k, v) -> v.getKey().remove(k, v.getValue()));
         ctx.close();
     }
 

@@ -15,8 +15,13 @@ package io.streamnative.pulsar.handlers.mqtt;
 
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.Sets;
+
+import java.util.Collection;
+import java.util.Collections;
 import java.util.List;
 import java.util.Set;
+import java.util.stream.Collectors;
+import java.util.stream.IntStream;
 
 import io.streamnative.pulsar.handlers.mqtt.sharding.Sharder;
 import lombok.Getter;
@@ -99,26 +104,37 @@ public class MQTTCommonConfiguration extends ServiceConfiguration {
     )
     private String defaultTopicDomain = "persistent";
 
-    @FieldContext(
-            category = CATEGORY_MQTT_PROXY,
-            required = false,
-            doc = "The mqtt proxy port"
-    )
-    private int mqttProxyPort = 5682;
+    private int mqttProxyPort;
 
     @FieldContext(
-            category = CATEGORY_MQTT_PROXY,
-            required = false,
-            doc = "The mqtt proxy tls port"
+        category = CATEGORY_MQTT_PROXY,
+        required = false,
+        doc = "The mqtt proxy ports, separator is ','"
     )
-    private int mqttProxyTlsPort = 5683;
+    private String mqttProxyPorts = "5682";
+
+    private int mqttProxyTlsPort;
+
+    @FieldContext(
+        category = CATEGORY_MQTT_PROXY,
+        required = false,
+        doc = "The mqtt proxy tls ports, separator is ','"
+    )
+    private String mqttProxyTlsPorts = "5683";
 
     @FieldContext(
             category = CATEGORY_MQTT_PROXY,
             required = false,
             doc = "The mqtt proxy tls psk port"
     )
-    private int mqttProxyTlsPskPort = 5684;
+    private int mqttProxyTlsPskPort;
+
+    @FieldContext(
+        category = CATEGORY_MQTT_PROXY,
+        required = false,
+        doc = "The mqtt proxy tls psk port, separator is ','"
+    )
+    private String mqttProxyTlsPskPorts = "5684";
 
     @FieldContext(
             category = CATEGORY_MQTT_PROXY,
@@ -321,5 +337,20 @@ public class MQTTCommonConfiguration extends ServiceConfiguration {
      * Executor responsible for publishing messages
      */
     private OrderedExecutor orderedPublishExecutor;
+
+    private List<String> allRealTopics;
+
+    public List<String> getAllRealTopics() {
+        if (allRealTopics == null) {
+            if (mqttRealTopicCount < 1) {
+                allRealTopics = Collections.EMPTY_LIST;
+            } else {
+                allRealTopics = IntStream.range(0, mqttRealTopicCount)
+                    .mapToObj(i -> String.format("%s_%d", mqttRealTopicNamePrefix, i))
+                    .collect(Collectors.toList());
+            }
+        }
+        return allRealTopics;
+    }
 
 }

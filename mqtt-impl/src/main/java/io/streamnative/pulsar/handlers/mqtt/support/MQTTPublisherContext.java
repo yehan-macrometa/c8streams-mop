@@ -1,6 +1,7 @@
 package io.streamnative.pulsar.handlers.mqtt.support;
 
 import io.streamnative.pulsar.handlers.mqtt.MQTTServerConfiguration;
+import lombok.extern.slf4j.Slf4j;
 import org.apache.pulsar.broker.service.BrokerService;
 import org.apache.pulsar.broker.service.Topic;
 import org.apache.pulsar.client.api.Message;
@@ -15,10 +16,11 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 
+@Slf4j
 public class MQTTPublisherContext {
     private static MQTTPublisherContext instance;
     private final PulsarClient client;
-    private final Map<String, CompletableFuture<Producer<byte[]>>> producers = new ConcurrentHashMap<>();
+    private static final Map<String, Producer<byte[]>> producers = new ConcurrentHashMap<>();
 
     private MQTTPublisherContext(BrokerService brokerService, MQTTServerConfiguration serverConfiguration) {
         int numThreads = serverConfiguration.getMqttNumConsumerThreads();
@@ -62,14 +64,35 @@ public class MQTTPublisherContext {
                 .sendAsync());
     }
 
-    public CompletableFuture<Producer<byte[]>> getProducer(String topic) {
-        return producers.computeIfAbsent(topic, t -> client.newProducer()
-                .topic(t)
-                .blockIfQueueFull(true)
-                .sendTimeout(1, TimeUnit.MINUTES)
-                .maxPendingMessages(100_000)
-                .batchingMaxMessages(1000)
-                .batchingMaxPublishDelay(10, TimeUnit.MILLISECONDS)
-                .createAsync());
+    public synchronized CompletableFuture<Producer<byte[]>> getProducer(String topic) {
+        CompletableFuture<Producer<byte[]>> future = new CompletableFuture<>();
+        Producer<byte[]> producer = producers.get(topic);
+        if (producer != null) {
+            future.complete(producer);
+        } else {
+            synchronized (this) {
+                producer = producers.get(topic);
+                if (producer != null) {
+                    future.complete(producer);
+                } else {
+                    try {
+                        producer = client.newProducer()
+                            .topic(topic)
+                            .blockIfQueueFull(true)
+                            .sendTimeout(1, TimeUnit.MINUTES)
+                            .maxPendingMessages(100_000)
+                            .batchingMaxMessages(1000)
+                            .batchingMaxPublishDelay(10, TimeUnit.MILLISECONDS)
+                            .create();
+                        producers.put(topic, producer);
+                        future.complete(producer);
+                        log.info("Created Producer for pulsar topic = " + topic);
+                    } catch (PulsarClientException e) {
+                        future.completeExceptionally(e);
+                    }
+                }
+            }
+        }
+        return future;
     }
 }
