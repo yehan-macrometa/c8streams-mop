@@ -48,4 +48,10 @@ public class MQTTServerConfiguration extends MQTTCommonConfiguration {
         doc = "Default messages per second dispatch throttling-limit for every pulsar topic. Using a value of 0, is disabling default"
     )
     private int mqttDLTThrottlingRatePerTopicInMsg = 100;
+
+    @FieldContext(
+        category = CATEGORY_MQTT,
+        doc = "Init all common consumers at start time"
+    )
+    private boolean mqttInitCommonConsumers = false;
 }
