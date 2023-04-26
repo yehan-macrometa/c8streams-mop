@@ -32,6 +32,10 @@ import io.netty.handler.codec.mqtt.MqttSubAckMessage;
 import io.streamnative.pulsar.handlers.mqtt.utils.NettyUtils;
 import java.net.InetSocketAddress;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ScheduledFuture;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
+
 import lombok.extern.slf4j.Slf4j;
 
 /**
@@ -45,9 +49,11 @@ public class MQTTProxyExchanger {
     private Channel brokerChannel;
     private CompletableFuture<Void> brokerConnected = new CompletableFuture<>();
     private CompletableFuture<Void> brokerConnectedAck = new CompletableFuture<>();
+    private MQTTProxyConfiguration config;
 
-    MQTTProxyExchanger(MQTTProxyProtocolMethodProcessor processor, InetSocketAddress mqttBroker) {
+    MQTTProxyExchanger(MQTTProxyProtocolMethodProcessor processor, InetSocketAddress mqttBroker, MQTTProxyConfiguration config) {
         this.processor = processor;
+        this.config = config;
         Bootstrap bootstrap = new Bootstrap();
         bootstrap.group(processor.clientChannel().eventLoop())
                 .channel(processor.clientChannel().getClass())
@@ -147,7 +153,34 @@ public class MQTTProxyExchanger {
         return this.brokerChannel.isWritable();
     }
 
+    private final AtomicInteger flushScheduled = new AtomicInteger(0);
+    private ScheduledFuture scheduledFuture;
+
     public void writeAndFlush(Object msg) {
-        this.brokerChannel.writeAndFlush(msg);
+        this.brokerChannel.write(msg);
+        int countMsgs = flushScheduled.incrementAndGet();
+
+        if (config.getMqttProxyMaxDelayMs() == 0) {
+            this.brokerChannel.flush();
+        } else if (countMsgs == 1) {
+            MQTTProxyExchanger exchanger = this;
+            scheduledFuture = brokerChannel.pipeline().firstContext().executor().schedule(() -> {
+                synchronized (exchanger) {
+                    if (flushScheduled.get() > 0) {
+                        this.brokerChannel.flush();
+                        flushScheduled.set(0);
+                    }
+                }
+            }, config.getMqttProxyMaxDelayMs(), TimeUnit.MILLISECONDS);
+        } else if (countMsgs >= config.getMqttProxyMaxMsgInBatch()) {
+            synchronized (this) {
+                this.brokerChannel.flush();
+                flushScheduled.set(0);
+                if (scheduledFuture != null) {
+                    scheduledFuture.cancel(false);
+                    scheduledFuture = null;
+                }
+            }
+        }
     }
 }

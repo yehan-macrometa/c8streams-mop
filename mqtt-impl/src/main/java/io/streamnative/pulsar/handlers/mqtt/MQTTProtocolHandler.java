@@ -215,6 +215,8 @@ public class MQTTProtocolHandler implements ProtocolHandler {
 
         proxyConfig.setMqttRealTopicCount(mqttConfig.getMqttRealTopicCount());
         proxyConfig.setMqttRealTopicNamePrefix(mqttConfig.getMqttRealTopicNamePrefix());
+        proxyConfig.setMqttProxyMaxDelayMs(mqttConfig.getMqttProxyMaxDelayMs());
+        proxyConfig.setMqttProxyMaxMsgInBatch(mqttConfig.getMqttProxyMaxMsgInBatch());
         proxyConfig.setSharder(mqttConfig.getSharder());
         log.info("proxyConfig broker service URL: {}", proxyConfig.getBrokerServiceURL());
         return proxyConfig;

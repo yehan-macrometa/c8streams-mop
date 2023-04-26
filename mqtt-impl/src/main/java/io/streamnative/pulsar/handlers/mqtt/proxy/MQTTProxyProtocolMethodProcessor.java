@@ -92,6 +92,8 @@ public class MQTTProxyProtocolMethodProcessor implements ProtocolMethodProcessor
         this.brokerPool = new ConcurrentHashMap<>();
         this.topicCountForSequenceId = new ConcurrentHashMap<>();
         this.packetIdTopic = new ConcurrentHashMap<>();
+        log.info("[{}] MQTTProxyProtocolMethodProcessor: create", this);
+
     }
 
     // client -> proxy
@@ -409,7 +411,7 @@ public class MQTTProxyProtocolMethodProcessor implements ProtocolMethodProcessor
             CompletableFuture<MQTTProxyExchanger> future = new CompletableFuture<>();
             try {
                 MQTTProxyExchanger result = brokerPool.computeIfAbsent(mqttBroker, addr ->
-                        new MQTTProxyExchanger(this, mqttBroker));
+                    new MQTTProxyExchanger(this, mqttBroker, proxyConfig));
                 result.connectedAck().thenAccept(__ -> future.complete(result));
             } catch (Exception ex) {
                 future.completeExceptionally(ex);

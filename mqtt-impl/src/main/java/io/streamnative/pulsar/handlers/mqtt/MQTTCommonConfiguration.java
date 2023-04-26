@@ -328,6 +328,18 @@ public class MQTTCommonConfiguration extends ServiceConfiguration {
     )
     private int mqttNumConsumerThreads = 8;
 
+    @FieldContext(
+        category = CATEGORY_MQTT_PROXY,
+        doc = "Max delay ms sending messages to broker"
+    )
+    private int mqttProxyMaxDelayMs = 0;
+
+    @FieldContext(
+        category = CATEGORY_MQTT_PROXY,
+        doc = "Max number of messages in a batch for sending to a broker"
+    )
+    private int mqttProxyMaxMsgInBatch = 500;
+
     /**
      * Sharder to select the correct shard for the given topics
      */
