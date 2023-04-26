@@ -115,7 +115,9 @@ public class DeadLetterConsumer {
 
     public void close() {
         try {
-            consumer.close();
+            if (consumer != null) {
+                consumer.close();
+            }
         } catch (PulsarClientException e) {
             log.warn("Failed to close DeadLetter consumer", e);
         }

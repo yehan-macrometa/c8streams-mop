@@ -49,7 +49,9 @@ public class DeadLetterProducer {
 
     public void close() {
         try {
-            producer.close();
+            if (producer != null) {
+                producer.close();
+            }
         } catch (PulsarClientException e) {
             log.warn("Failed to close DeadLetter producer", e);
         }

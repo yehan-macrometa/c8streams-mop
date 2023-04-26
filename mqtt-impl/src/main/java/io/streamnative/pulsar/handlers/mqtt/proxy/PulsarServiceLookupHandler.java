@@ -21,6 +21,8 @@ import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.stream.Collectors;
 
+import io.streamnative.pulsar.handlers.mqtt.sharding.ConsistentHashSharder;
+import io.streamnative.pulsar.handlers.mqtt.sharding.Sharder;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.tuple.Pair;
 import org.apache.pulsar.broker.PulsarService;
@@ -86,8 +88,7 @@ public class PulsarServiceLookupHandler implements LookupHandler {
                                         String[] splits = mqttBrokerUrl.split(":");
                                         return Integer.parseInt(splits[splits.length - 1]);
                                     }).collect(Collectors.toList());
-                                    // pick up random port
-                                    int mqttBrokerPort = mqttPorts.get((int)(Math.random() * mqttPorts.size()));
+                                    int mqttBrokerPort = mqttPorts.get(Math.abs(topicName.hashCode()) % mqttPorts.size());
                                     lookupResult.complete(InetSocketAddress.createUnresolved(
                                             pair.getLeft().getHostName(), mqttBrokerPort));
                                     foundOwner = true;
