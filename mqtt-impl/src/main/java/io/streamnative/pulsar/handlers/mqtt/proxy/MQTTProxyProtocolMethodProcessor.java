@@ -23,6 +23,7 @@ import io.netty.handler.codec.mqtt.MqttConnAckMessage;
 import io.netty.handler.codec.mqtt.MqttConnectMessage;
 import io.netty.handler.codec.mqtt.MqttConnectPayload;
 import io.netty.handler.codec.mqtt.MqttConnectReturnCode;
+import io.netty.handler.codec.mqtt.MqttConnectVariableHeader;
 import io.netty.handler.codec.mqtt.MqttMessage;
 import io.netty.handler.codec.mqtt.MqttPubAckMessage;
 import io.netty.handler.codec.mqtt.MqttPublishMessage;
@@ -98,14 +99,27 @@ public class MQTTProxyProtocolMethodProcessor implements ProtocolMethodProcessor
     public void processConnect(Channel channel, MqttConnectMessage msg) {
         MqttConnectMessage connectMessage = msg;
         MqttConnectPayload payload = connectMessage.payload();
+        MqttConnectVariableHeader variableHeader = connectMessage.variableHeader();
         String clientId = payload.clientIdentifier();
+        String userName = payload.userName();
+
+        if (variableHeader.hasPassword() && !variableHeader.hasUserName()) {
+            connectMessage = MqttMessageUtils.cloneMqttConnectMessageWithUserNameFlag(connectMessage);
+            variableHeader = connectMessage.variableHeader();
+            if (log.isDebugEnabled()) {
+                log.debug("Proxy CONNECT message. Consists only password, username also should be present. " +
+                                "Set hasUserName = true CId={}, username={}.",
+                        clientId, userName);
+            }
+        }
+
         if (log.isDebugEnabled()) {
-            log.debug("Proxy CONNECT message. CId={}, username={}", clientId, payload.userName());
+            log.debug("Proxy CONNECT message. CId={}, username={}", clientId, userName);
         }
         if (StringUtils.isEmpty(clientId)) {
             // Generating client id.
             clientId = MqttMessageUtils.createClientIdentifier(channel);
-            connectMessage = MqttMessageUtils.createMqttConnectMessage(msg, clientId);
+            connectMessage = MqttMessageUtils.cloneMqttConnectMessageWithClientId(connectMessage, clientId);
             if (log.isDebugEnabled()) {
                 log.debug("Proxy client has connected with generated identifier. CId={}", clientId);
             }
@@ -126,12 +140,12 @@ public class MQTTProxyProtocolMethodProcessor implements ProtocolMethodProcessor
             }
         }
         NettyUtils.setClientId(channel, clientId);
-        NettyUtils.setCleanSession(channel, msg.variableHeader().isCleanSession());
+        NettyUtils.setCleanSession(channel, variableHeader.isCleanSession());
         NettyUtils.setConnectMsg(channel, connectMessage);
-        NettyUtils.setKeepAliveTime(channel, MqttMessageUtils.getKeepAliveTime(msg));
-        NettyUtils.addIdleStateHandler(channel, MqttMessageUtils.getKeepAliveTime(msg));
+        NettyUtils.setKeepAliveTime(channel, MqttMessageUtils.getKeepAliveTime(connectMessage));
+        NettyUtils.addIdleStateHandler(channel, MqttMessageUtils.getKeepAliveTime(connectMessage));
 
-        Connection connection = new Connection(clientId, channel, msg.variableHeader().isCleanSession());
+        Connection connection = new Connection(clientId, channel, variableHeader.isCleanSession());
         connectionManager.addConnection(connection);
         NettyUtils.setConnection(channel, connection);
         connection.sendConnAck();

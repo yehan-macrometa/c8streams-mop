@@ -20,6 +20,7 @@ import io.netty.handler.codec.mqtt.MqttConnAckVariableHeader;
 import io.netty.handler.codec.mqtt.MqttConnectMessage;
 import io.netty.handler.codec.mqtt.MqttConnectPayload;
 import io.netty.handler.codec.mqtt.MqttConnectReturnCode;
+import io.netty.handler.codec.mqtt.MqttConnectVariableHeader;
 import io.netty.handler.codec.mqtt.MqttFixedHeader;
 import io.netty.handler.codec.mqtt.MqttMessage;
 import io.netty.handler.codec.mqtt.MqttMessageIdVariableHeader;
@@ -90,11 +91,21 @@ public class MqttMessageUtils {
         return clientIdentifier;
     }
 
-    public static MqttConnectMessage createMqttConnectMessage(MqttConnectMessage msg, String clientId) {
+    public static MqttConnectMessage cloneMqttConnectMessageWithClientId(MqttConnectMessage msg, String clientId) {
         MqttConnectPayload origin = msg.payload();
         MqttConnectPayload payload = new MqttConnectPayload(clientId, origin.willProperties(), origin.willTopic(),
                 origin.willMessageInBytes(), origin.userName(), origin.passwordInBytes());
         return new MqttConnectMessage(msg.fixedHeader(), msg.variableHeader(), payload);
+    }
+
+    public static MqttConnectMessage cloneMqttConnectMessageWithUserNameFlag(MqttConnectMessage msg) {
+        MqttConnectVariableHeader origin = msg.variableHeader();
+        MqttConnectVariableHeader variableHeader = new MqttConnectVariableHeader(
+                origin.name(), origin.version(), true, true,
+                origin.isWillRetain(), origin.willQos(), origin.isWillFlag(),
+                origin.isCleanSession(), origin.keepAliveTimeSeconds(), origin.properties()
+        );
+        return new MqttConnectMessage(msg.fixedHeader(), variableHeader, msg.payload());
     }
 
     public static int getKeepAliveTime(MqttConnectMessage msg) {
