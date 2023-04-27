@@ -75,9 +75,9 @@ public class MQTTProxyProtocolMethodProcessor implements ProtocolMethodProcessor
     private final MQTTConnectionManager connectionManager;
     @Getter
     private final Map<Integer, String> packetIdTopic;
-    private final Cache<String, CompletableFuture<InetSocketAddress>> lookupCache =
+    private static final Cache<String, CompletableFuture<InetSocketAddress>> lookupCache =
             Caffeine.newBuilder().expireAfterWrite(1, TimeUnit.MINUTES).build();
-    private final Cache<String, String> topicCache =
+    private static final Cache<String, String> topicCache =
             Caffeine.newBuilder().expireAfterWrite(1, TimeUnit.HOURS).build();
 
     public MQTTProxyProtocolMethodProcessor(MQTTProxyService proxyService, MQTTProxyHandler proxyHandler) {
