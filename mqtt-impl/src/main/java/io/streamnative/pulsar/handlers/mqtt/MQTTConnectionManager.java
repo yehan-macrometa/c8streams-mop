@@ -30,7 +30,7 @@ public class MQTTConnectionManager {
     }
 
     public void addConnection(Connection connection) {
-        Connection existing = connections.put(connection.getClientId(), connection);
+        Connection existing = connections.put(connection.getClientId() + connection.getChannel().id(), connection);
         if (existing != null) {
             if (log.isDebugEnabled()) {
                 log.debug("The clientId is existed. Close existing connection. CId={}", existing.getClientId());
@@ -42,7 +42,7 @@ public class MQTTConnectionManager {
     // Must use connections.remove(key, value).
     public void removeConnection(Connection connection) {
         if (connection != null) {
-            connections.remove(connection.getClientId(), connection);
+            connections.remove(connection.getClientId() + connection.getChannel().id(), connection);
         }
     }
 }
