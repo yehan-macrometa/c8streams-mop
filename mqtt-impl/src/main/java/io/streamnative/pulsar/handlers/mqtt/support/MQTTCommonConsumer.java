@@ -149,14 +149,14 @@ public class MQTTCommonConsumer {
             }
         }
         if (deadLetterProducer.readyToBeDead(msg)) {
-            orderedSendExecutor.executeOrdered(virtualTopic, () -> {
+//            orderedSendExecutor.executeOrdered(virtualTopic, () -> {
                 try {
                     deadLetterProducer.send(msg);
                     consumer.acknowledge(msg.getMessageId());
                 } catch (Exception e) {
                     log.warn("An error occurred while processing sendMessage. {}", e.getMessage(), e);
                 }
-            });
+//            });
         }
     }
 
