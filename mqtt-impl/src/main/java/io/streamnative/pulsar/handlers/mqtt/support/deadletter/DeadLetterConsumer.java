@@ -68,6 +68,10 @@ public class DeadLetterConsumer {
                     sendDeadLetterMessage(consumer, msg);
                 } catch (PulsarClientException e) {
                     log.warn("Failure to receive a message from DLT", e);
+                } finally {
+                    if (rateLimiter != null) {
+                        rateLimiter.acquire();
+                    }
                 }
             }
         });
