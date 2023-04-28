@@ -275,6 +275,9 @@ public class MQTTProtocolHandler implements ProtocolHandler {
         if (proxyService != null) {
             proxyService.close();
         }
+        if (mqttService != null) {
+            mqttService.close();
+        }
     }
 
 }

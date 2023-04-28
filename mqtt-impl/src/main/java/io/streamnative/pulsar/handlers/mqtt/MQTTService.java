@@ -236,4 +236,14 @@ public class MQTTService {
             }
         }
     }
+
+    public void close(){
+        if (client != null) {
+            try {
+                client.close();
+            } catch (PulsarClientException e) {
+                log.warn("Failed to close pulsar client", e);
+            }
+        }
+    }
 }
