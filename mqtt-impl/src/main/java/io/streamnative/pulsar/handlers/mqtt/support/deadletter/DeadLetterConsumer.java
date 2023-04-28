@@ -111,7 +111,6 @@ public class DeadLetterConsumer {
                     consumer.getTopic(), new String(msg.getData()));
             }
         }
-        rateLimiter.acquire();
     }
 
     public void close() {

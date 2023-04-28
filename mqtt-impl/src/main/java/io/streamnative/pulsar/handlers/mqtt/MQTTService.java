@@ -82,7 +82,6 @@ public class MQTTService {
     private final ExecutorService ackExecutor;
     private final ExecutorService dltExecutor;
     private final PulsarClient client;
-    private final PulsarClient deadLetterClient;
     private final ScheduledExecutorService scheduledExecutor;
     private static final String POLICY_ROOT = "/admin/policies/";
 
@@ -126,18 +125,6 @@ public class MQTTService {
                     .ioThreads(numThreads)
                     .listenerThreads(numThreads)
                     .build();
-
-
-            deadLetterClient = PulsarClient.builder()
-                    .serviceUrl("pulsar://localhost:6650")
-                    .authentication(
-                            brokerService.getPulsar().getConfiguration().getBrokerClientAuthenticationPlugin(),
-                            brokerService.getPulsar().getConfiguration().getBrokerClientAuthenticationParameters())
-                    .operationTimeout(1, TimeUnit.MINUTES)
-                    .connectionsPerBroker(numThreads)
-                    .ioThreads(numThreads)
-                    .listenerThreads(numThreads)
-                    .build();
         } catch (PulsarClientException e) {
             throw new RuntimeException(e);
         }
@@ -169,7 +156,7 @@ public class MQTTService {
                 for (String pulsarTopic : serverConfiguration.getAllRealTopics()) {
                     MQTTCommonConsumerGroup consumerGroup = null;
                     try {
-                        consumerGroup = new MQTTCommonConsumerGroup(client, deadLetterClient, orderedSendExecutor,
+                        consumerGroup = new MQTTCommonConsumerGroup(client, orderedSendExecutor,
                             ackExecutor, dltExecutor, pulsarTopic, serverConfiguration);
                         commonConsumersMap.put(pulsarTopic, consumerGroup);
                     } catch (PulsarClientException e) {
@@ -200,7 +187,7 @@ public class MQTTService {
                 } else {
 
                     try {
-                        consumerGroup = new MQTTCommonConsumerGroup(client, deadLetterClient, orderedSendExecutor,
+                        consumerGroup = new MQTTCommonConsumerGroup(client, orderedSendExecutor,
                             ackExecutor, dltExecutor, realTopicName, serverConfiguration);
                         commonConsumersMap.put(realTopicName, consumerGroup);
                         future.complete(consumerGroup);

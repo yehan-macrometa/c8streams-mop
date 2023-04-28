@@ -36,7 +36,7 @@ public class MQTTCommonConsumerGroup {
 
     private final Map<String, List<MQTTVirtualConsumer>> virtualConsumersMap = new ConcurrentHashMap<>();
 
-    public MQTTCommonConsumerGroup(PulsarClient client, PulsarClient deadLetterClient, OrderedExecutor orderedSendExecutor, ExecutorService ackExecutor,
+    public MQTTCommonConsumerGroup(PulsarClient client, OrderedExecutor orderedSendExecutor, ExecutorService ackExecutor,
                                    ExecutorService dltExecutor, String pulsarTopicName, MQTTServerConfiguration config) throws PulsarClientException {
         this.subscribersCount = config.getMqttRealTopicSubscribersCount();
         this.pulsarTopicName = pulsarTopicName;
@@ -48,10 +48,10 @@ public class MQTTCommonConsumerGroup {
         this.packetIdGenerator = PacketIdGenerator.newNonZeroGenerator();
         String deadLetterTopicName = pulsarTopicName + "-DLT";
         this.deadLetterConsumer =
-            new DeadLetterConsumer(deadLetterClient, dltExecutor, packetIdGenerator, virtualConsumersMap,
+            new DeadLetterConsumer(client, dltExecutor, packetIdGenerator, virtualConsumersMap,
                 deadLetterTopicName, config.getMqttDLTThrottlingRatePerTopicInMsg());
         this.deadLetterProducer =
-            new DeadLetterProducer(deadLetterClient, deadLetterTopicName, config.getMqttMaxRedeliverTimeSec() * 1000);
+            new DeadLetterProducer(client, deadLetterTopicName, config.getMqttMaxRedeliverTimeSec() * 1000);
 
         for (int i = 0; i < subscribersCount; i++) {
             try {
