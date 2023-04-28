@@ -42,6 +42,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
 
 import static org.apache.pulsar.broker.cache.LocalZooKeeperCacheService.LOCAL_POLICIES_ROOT;
@@ -79,6 +80,7 @@ public class MQTTService {
     @Getter
     private final ConcurrentHashMap<String, MQTTCommonConsumerGroup> commonConsumersMap;
     private final OrderedExecutor orderedSendExecutor;
+    private final Semaphore throttlingSendExecutions;
     private final ExecutorService ackExecutor;
     private final ExecutorService dltExecutor;
     private final PulsarClient client;
@@ -104,8 +106,9 @@ public class MQTTService {
         orderedSendExecutor = OrderedExecutor.newBuilder()
                 .name("mqtt-common-consumer-send")
                 .numThreads(numThreads)
-                .maxTasksInQueue(100_000)
+                .maxTasksInQueue(serverConfiguration.getMqttCommonConsumersThrottling())
                 .build();
+        throttlingSendExecutions = new Semaphore(serverConfiguration.getMqttCommonConsumersThrottling() - 1);
         ackExecutor = Executors.newWorkStealingPool(numThreads);
         dltExecutor = Executors.newCachedThreadPool(
             new DefaultThreadFactory("mqtt-dlt-exec", false, 2));
@@ -156,7 +159,7 @@ public class MQTTService {
                 for (String pulsarTopic : serverConfiguration.getAllRealTopics()) {
                     MQTTCommonConsumerGroup consumerGroup = null;
                     try {
-                        consumerGroup = new MQTTCommonConsumerGroup(client, orderedSendExecutor,
+                        consumerGroup = new MQTTCommonConsumerGroup(client, orderedSendExecutor, throttlingSendExecutions,
                             ackExecutor, dltExecutor, pulsarTopic, serverConfiguration);
                         commonConsumersMap.put(pulsarTopic, consumerGroup);
                     } catch (PulsarClientException e) {
@@ -187,7 +190,7 @@ public class MQTTService {
                 } else {
 
                     try {
-                        consumerGroup = new MQTTCommonConsumerGroup(client, orderedSendExecutor,
+                        consumerGroup = new MQTTCommonConsumerGroup(client, orderedSendExecutor, throttlingSendExecutions,
                             ackExecutor, dltExecutor, realTopicName, serverConfiguration);
                         commonConsumersMap.put(realTopicName, consumerGroup);
                         future.complete(consumerGroup);

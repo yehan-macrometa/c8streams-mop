@@ -21,6 +21,7 @@ import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Semaphore;
 
 @Slf4j
 public class MQTTCommonConsumerGroup {
@@ -29,18 +30,17 @@ public class MQTTCommonConsumerGroup {
     @Getter
     private final List<MQTTCommonConsumer> consumers;
     private final String pulsarTopicName;
-    private final OrderedExecutor orderedSendExecutor;
     private final DeadLetterConsumer deadLetterConsumer;
     private final DeadLetterProducer deadLetterProducer;
     private final PacketIdGenerator packetIdGenerator;
 
     private final Map<String, List<MQTTVirtualConsumer>> virtualConsumersMap = new ConcurrentHashMap<>();
 
-    public MQTTCommonConsumerGroup(PulsarClient client, OrderedExecutor orderedSendExecutor, ExecutorService ackExecutor,
-                                   ExecutorService dltExecutor, String pulsarTopicName, MQTTServerConfiguration config) throws PulsarClientException {
+    public MQTTCommonConsumerGroup(PulsarClient client, OrderedExecutor orderedSendExecutor, Semaphore throttlingSendExecutions,
+                                   ExecutorService ackExecutor, ExecutorService dltExecutor, String pulsarTopicName,
+                                   MQTTServerConfiguration config) throws PulsarClientException {
         this.subscribersCount = config.getMqttRealTopicSubscribersCount();
         this.pulsarTopicName = pulsarTopicName;
-        this.orderedSendExecutor = orderedSendExecutor;
         if (subscribersCount < 1) {
             throw new IllegalArgumentException(String.format("Invalid value in subscribersCount: %d", subscribersCount));
         }
@@ -56,7 +56,7 @@ public class MQTTCommonConsumerGroup {
         for (int i = 0; i < subscribersCount; i++) {
             try {
                 MQTTCommonConsumer commonConsumer = new MQTTCommonConsumer(pulsarTopicName, "common_" + i, i,
-                    orderedSendExecutor, ackExecutor, client, packetIdGenerator, virtualConsumersMap,
+                    orderedSendExecutor, throttlingSendExecutions, ackExecutor, client, packetIdGenerator, virtualConsumersMap,
                     deadLetterConsumer, deadLetterProducer);
                 log.info("MqttVirtualTopics: Common consumer #{} for real topic {} initialized", i, pulsarTopicName);
                 consumers.add(commonConsumer);

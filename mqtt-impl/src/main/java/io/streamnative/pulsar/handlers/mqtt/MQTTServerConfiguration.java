@@ -54,4 +54,11 @@ public class MQTTServerConfiguration extends MQTTCommonConfiguration {
         doc = "Init all common consumers at start time"
     )
     private boolean mqttInitCommonConsumers = false;
+
+    @FieldContext(
+        category = CATEGORY_MQTT,
+        doc = "Set throttling message processing for common consumers"
+    )
+    private int mqttCommonConsumersThrottling = 100_000;
+
 }
