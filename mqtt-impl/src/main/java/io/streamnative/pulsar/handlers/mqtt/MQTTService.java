@@ -237,6 +237,7 @@ public class MQTTService {
     }
 
     public void close(){
+        MQTTPublisherContext.close();
         if (client != null) {
             try {
                 client.close();

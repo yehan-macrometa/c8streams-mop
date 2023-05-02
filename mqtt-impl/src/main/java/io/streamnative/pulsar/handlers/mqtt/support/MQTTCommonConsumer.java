@@ -23,6 +23,7 @@ import io.streamnative.pulsar.handlers.mqtt.support.deadletter.DeadLetterProduce
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.bookkeeper.common.util.OrderedExecutor;
+import org.apache.pulsar.client.api.BatchReceivePolicy;
 import org.apache.pulsar.client.api.Consumer;
 import org.apache.pulsar.client.api.DeadLetterPolicy;
 import org.apache.pulsar.client.api.Message;
@@ -37,6 +38,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Semaphore;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
@@ -79,6 +81,9 @@ public class MQTTCommonConsumer {
                 .messageListener(this::sendMessage)
                 .receiverQueueSize(100_000)
                 .deadLetterPolicy(DeadLetterPolicy.builder().maxRedeliverCount(10000).build())
+                .batchReceivePolicy(BatchReceivePolicy.builder()
+                .maxNumMessages(1000).maxNumBytes(1024*1024).timeout(50, TimeUnit.MILLISECONDS)
+                .build())
                 .subscribe();
 
         // TODO: Use ScheduledExecutor and clean this part.

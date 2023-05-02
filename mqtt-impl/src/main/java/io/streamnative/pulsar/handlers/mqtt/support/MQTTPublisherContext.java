@@ -81,6 +81,7 @@ public class MQTTPublisherContext {
                             .blockIfQueueFull(true)
                             .sendTimeout(1, TimeUnit.MINUTES)
                             .maxPendingMessages(100_000)
+                            .enableBatching(true)
                             .batchingMaxMessages(1000)
                             .batchingMaxPublishDelay(10, TimeUnit.MILLISECONDS)
                             .create();
@@ -94,5 +95,16 @@ public class MQTTPublisherContext {
             }
         }
         return future;
+    }
+
+    public static void close() {
+        for (Producer<byte[]> producer: producers.values()) {
+            try {
+                producer.flush();
+                producer.close();
+            } catch (PulsarClientException e) {
+                log.info("Producer failed flush or close data for pulsar topic = {} ", producer.getTopic());
+            }
+        }
     }
 }
