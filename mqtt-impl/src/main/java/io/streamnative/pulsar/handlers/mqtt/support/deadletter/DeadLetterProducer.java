@@ -9,24 +9,39 @@ import org.apache.pulsar.client.api.Producer;
 import org.apache.pulsar.client.api.PulsarClient;
 import org.apache.pulsar.client.api.PulsarClientException;
 
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 
 @Slf4j
 public class DeadLetterProducer {
 
     private int maxRedeliverTimeMs;
+    private PulsarClient client;
+    private String deadLetterTopic;
     private Producer<byte[]> producer;
 
     public DeadLetterProducer(PulsarClient client, String deadLetterTopic, int maxRedeliverTimeMs) {
         this.maxRedeliverTimeMs = maxRedeliverTimeMs;
+            this.client = client;
+            this.deadLetterTopic = deadLetterTopic;
+    }
 
+    public void start() {
         try {
-            producer = client.newProducer()
+            if (log.isDebugEnabled()) {
+                log.info("[DLT Producer] for topic = {} creating...", deadLetterTopic);
+            }
+            this.producer = client.newProducer()
                 .topic(deadLetterTopic)
-                .batchingMaxMessages(1000)
-                .batchingMaxPublishDelay(100, TimeUnit.MILLISECONDS)
+                //.enableBatching(true)
+                //.batchingMaxMessages(1000)
+                //.batchingMaxPublishDelay(100, TimeUnit.MILLISECONDS)
                 .create();
-        } catch (PulsarClientException e) {
+            if (log.isDebugEnabled()) {
+                log.info("[DLT Producer] for topic = {} created", deadLetterTopic);
+            }
+        } catch (Exception e) {
             log.error("Could not create DeadLetter consumer or producer.", e);
         }
     }
@@ -40,11 +55,19 @@ public class DeadLetterProducer {
     }
 
     public void send(Message<byte[]> msg) throws PulsarClientException {
-        if (log.isDebugEnabled()) {
-            log.debug("[DLT Producer] Sent message = {} for pulsar topic = {} virtual topic = {}",
-                new String(msg.getData()), producer.getTopic(), msg.getProperty("virtualTopic"));
+        try {
+            if (log.isDebugEnabled()) {
+                log.debug("[DLT Producer] Sent message = {} for pulsar topic = {} virtual topic = {}",
+                    new String(msg.getData()), producer.getTopic(), msg.getProperty("virtualTopic"));
+            }
+
+            if (producer != null) {
+                producer.newMessage().properties(msg.getProperties()).value(msg.getData()).send();
+            }
+        } catch (Exception e) {
+            log.error("Could not create DeadLetter consumer or producer.", e);
         }
-        producer.newMessage().properties(msg.getProperties()).value(msg.getData()).send();
+
     }
 
     public void close() {
@@ -52,7 +75,7 @@ public class DeadLetterProducer {
             if (producer != null) {
                 producer.close();
             }
-        } catch (PulsarClientException e) {
+        } catch (Exception e) {
             log.warn("Failed to close DeadLetter producer", e);
         }
     }

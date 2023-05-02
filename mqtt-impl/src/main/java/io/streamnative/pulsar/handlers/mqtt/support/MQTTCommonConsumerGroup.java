@@ -47,11 +47,16 @@ public class MQTTCommonConsumerGroup {
         this.consumers = new ArrayList<>();
         this.packetIdGenerator = PacketIdGenerator.newNonZeroGenerator();
         String deadLetterTopicName = pulsarTopicName + "-DLT";
+
         this.deadLetterConsumer =
             new DeadLetterConsumer(client, dltExecutor, packetIdGenerator, virtualConsumersMap,
                 deadLetterTopicName, config.getMqttDLTThrottlingRatePerTopicInMsg());
+
         this.deadLetterProducer =
             new DeadLetterProducer(client, deadLetterTopicName, config.getMqttMaxRedeliverTimeSec() * 1000);
+
+        dltExecutor.execute(this.deadLetterProducer::start);
+        dltExecutor.execute(this.deadLetterConsumer::start);
 
         for (int i = 0; i < subscribersCount; i++) {
             try {
@@ -83,7 +88,9 @@ public class MQTTCommonConsumerGroup {
     }
 
     public void close() {
-        deadLetterConsumer.close();
+        if (deadLetterConsumer != null) {
+            deadLetterConsumer.close();
+        }
         for (MQTTCommonConsumer commonConsumer : consumers) {
             commonConsumer.close();
         }
@@ -94,7 +101,9 @@ public class MQTTCommonConsumerGroup {
                 virtualConsumer.close();
             }
         }
-        deadLetterProducer.close();
+        if (deadLetterProducer != null) {
+            deadLetterProducer.close();
+        }
     }
 
 }

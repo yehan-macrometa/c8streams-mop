@@ -27,6 +27,8 @@ import java.util.concurrent.ExecutorService;
 @Slf4j
 public class DeadLetterConsumer {
 
+    private PulsarClient client;
+    private String deadLetterTopic;
     private Consumer<byte[]> consumer;
     private ExecutorService dltExecutor;
     private final RateLimiter rateLimiter;
@@ -36,6 +38,8 @@ public class DeadLetterConsumer {
     public DeadLetterConsumer(PulsarClient client, ExecutorService dltExecutor, PacketIdGenerator packetIdGenerator,
                               Map<String, List<MQTTVirtualConsumer>> virtualConsumersMap,
                               String deadLetterTopic, int throttlingRate) {
+        this.client = client;
+        this.deadLetterTopic = deadLetterTopic;
         this.dltExecutor = dltExecutor;
         if (throttlingRate > 0) {
             this.rateLimiter = RateLimiter.create(throttlingRate);
@@ -44,8 +48,29 @@ public class DeadLetterConsumer {
         }
         this.packetIdGenerator = packetIdGenerator;
         this.virtualConsumersMap = virtualConsumersMap;
+    }
 
+    private void runThrottlingConsumer() {
+        while (true) {
+            try {
+                Message<byte[]> msg = consumer.receive();
+                sendDeadLetterMessage(consumer, msg);
+                log.info("[DLT Consumer] got message: " + new String(msg.getData()));
+            } catch (PulsarClientException e) {
+                log.warn("Failure to receive a message from DLT", e);
+            } finally {
+                if (rateLimiter != null) {
+                    rateLimiter.acquire();
+                }
+            }
+        }
+    }
+
+    public void start() {
         try {
+            if (log.isDebugEnabled()) {
+                log.info("[DLT Consumer] for topic = {} creating...", deadLetterTopic);
+            }
             consumer = client.newConsumer()
                 .consumerName("commonDlt")
                 .topic(deadLetterTopic)
@@ -54,27 +79,13 @@ public class DeadLetterConsumer {
                 .deadLetterPolicy(DeadLetterPolicy.builder().maxRedeliverCount(10000).build())
                 .subscribe();
 
+            if (log.isDebugEnabled()) {
+                log.debug("[DLT Consumer] for topic = {} created", deadLetterTopic);
+            }
             runThrottlingConsumer();
-        } catch (PulsarClientException e) {
+        } catch (Exception e) {
             log.error("Could not create DeadLetter consumer or producer.", e);
         }
-    }
-
-    private void runThrottlingConsumer() {
-        dltExecutor.submit(() -> {
-            while (true) {
-                try {
-                    Message<byte[]> msg = consumer.receive();
-                    sendDeadLetterMessage(consumer, msg);
-                } catch (PulsarClientException e) {
-                    log.warn("Failure to receive a message from DLT", e);
-                } finally {
-                    if (rateLimiter != null) {
-                        rateLimiter.acquire();
-                    }
-                }
-            }
-        });
     }
 
     private void sendDeadLetterMessage(Consumer<byte[]> consumer, Message<byte[]> msg) {

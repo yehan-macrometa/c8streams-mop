@@ -69,7 +69,6 @@ public class MQTTCommonConsumer {
         this.deadLetterConsumer = deadLetterConsumer;
         this.deadLetterProducer = deadLetterProducer;
         this.virtualConsumersMap = virtualConsumersMap;
-        this.
 
         consumer = client.newConsumer()
                 .consumerName(consumerName)
@@ -106,7 +105,7 @@ public class MQTTCommonConsumer {
             return;
         }
 
-        if (deadLetterProducer.readyToBeDead(msg)) {
+        if (deadLetterProducer != null && deadLetterProducer.readyToBeDead(msg)) {
             try {
                 throttlingSendExecutions.acquire();
                 orderedSendExecutor.executeOrdered(virtualTopic, () -> {

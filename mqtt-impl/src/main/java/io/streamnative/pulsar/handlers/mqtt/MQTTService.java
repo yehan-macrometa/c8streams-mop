@@ -85,6 +85,7 @@ public class MQTTService {
     private final ExecutorService dltExecutor;
     private final PulsarClient client;
     private final ScheduledExecutorService scheduledExecutor;
+    private final Semaphore commonConsumerSemaphore;
     private static final String POLICY_ROOT = "/admin/policies/";
 
     public MQTTService(BrokerService brokerService, MQTTServerConfiguration serverConfiguration) {
@@ -101,6 +102,7 @@ public class MQTTService {
         this.connectionManager = new MQTTConnectionManager();
         this.commonConsumersMap = new ConcurrentHashMap<>();
         this.scheduledExecutor = Executors.newScheduledThreadPool(1);
+        this.commonConsumerSemaphore = new Semaphore(1);
 
         int numThreads = serverConfiguration.getMqttNumConsumerThreads();
         orderedSendExecutor = OrderedExecutor.newBuilder()
@@ -182,23 +184,33 @@ public class MQTTService {
         if (consumerGroup != null) {
             future.complete(consumerGroup);
         } else {
-            synchronized (this) {
+            try {
+                commonConsumerSemaphore.acquire();
                 consumerGroup = commonConsumersMap.get(realTopicName);
-
                 if (consumerGroup != null) {
                     future.complete(consumerGroup);
+                    commonConsumerSemaphore.release();
                 } else {
-
-                    try {
-                        consumerGroup = new MQTTCommonConsumerGroup(client, orderedSendExecutor, throttlingSendExecutions,
-                            ackExecutor, dltExecutor, realTopicName, serverConfiguration);
-                        commonConsumersMap.put(realTopicName, consumerGroup);
-                        future.complete(consumerGroup);
-                    } catch (PulsarClientException e) {
-                        log.error("Could not create common consumer", e);
-                        future.completeExceptionally(e);
-                    }
+                    ackExecutor.execute(() -> {
+                        log.info("Create Common Consumer for topic = " + realTopicName);
+                        try {
+                            MQTTCommonConsumerGroup consumerGroup2 =
+                                new MQTTCommonConsumerGroup(client, orderedSendExecutor, throttlingSendExecutions,
+                                ackExecutor, dltExecutor, realTopicName, serverConfiguration);
+                            commonConsumersMap.put(realTopicName, consumerGroup2);
+                            log.info("Finish Create Common Consumer for topic = " + realTopicName);
+                            future.complete(consumerGroup2);
+                        } catch (PulsarClientException e) {
+                            log.error("Could not create common consumer", e);
+                            future.completeExceptionally(e);
+                        } finally {
+                            commonConsumerSemaphore.release();
+                        }
+                    });
                 }
+
+            } catch (InterruptedException e) {
+                log.warn("Semaphore failed", e);
             }
         }
         return future;
