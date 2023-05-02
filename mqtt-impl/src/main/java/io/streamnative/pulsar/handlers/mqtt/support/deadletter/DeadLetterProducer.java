@@ -34,9 +34,9 @@ public class DeadLetterProducer {
             }
             this.producer = client.newProducer()
                 .topic(deadLetterTopic)
-                //.enableBatching(true)
-                //.batchingMaxMessages(1000)
-                //.batchingMaxPublishDelay(100, TimeUnit.MILLISECONDS)
+                .enableBatching(true)
+                .batchingMaxMessages(1000)
+                .batchingMaxPublishDelay(100, TimeUnit.MILLISECONDS)
                 .create();
             if (log.isDebugEnabled()) {
                 log.info("[DLT Producer] for topic = {} created", deadLetterTopic);
@@ -73,6 +73,7 @@ public class DeadLetterProducer {
     public void close() {
         try {
             if (producer != null) {
+                producer.flush();
                 producer.close();
             }
         } catch (Exception e) {

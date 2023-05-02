@@ -12,6 +12,7 @@ import io.streamnative.pulsar.handlers.mqtt.PacketIdGenerator;
 import io.streamnative.pulsar.handlers.mqtt.support.MQTTVirtualConsumer;
 import io.streamnative.pulsar.handlers.mqtt.support.MessageBuilder;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.pulsar.client.api.BatchReceivePolicy;
 import org.apache.pulsar.client.api.Consumer;
 import org.apache.pulsar.client.api.DeadLetterPolicy;
 import org.apache.pulsar.client.api.Message;
@@ -23,6 +24,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ExecutorService;
+import java.util.concurrent.TimeUnit;
 
 @Slf4j
 public class DeadLetterConsumer {
@@ -77,6 +79,9 @@ public class DeadLetterConsumer {
                 .subscriptionName("commonDltSub")
                 .subscriptionInitialPosition(SubscriptionInitialPosition.Earliest)
                 .deadLetterPolicy(DeadLetterPolicy.builder().maxRedeliverCount(10000).build())
+                .batchReceivePolicy(BatchReceivePolicy.builder()
+                    .maxNumMessages(1000).maxNumBytes(1024*1024).timeout(1000, TimeUnit.MILLISECONDS)
+                    .build())
                 .subscribe();
 
             if (log.isDebugEnabled()) {
