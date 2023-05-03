@@ -57,7 +57,6 @@ public class DeadLetterConsumer {
             try {
                 Message<byte[]> msg = consumer.receive();
                 sendDeadLetterMessage(consumer, msg);
-                log.info("[DLT Consumer] got message: " + new String(msg.getData()));
             } catch (PulsarClientException e) {
                 log.warn("Failure to receive a message from DLT", e);
             } finally {
@@ -71,7 +70,7 @@ public class DeadLetterConsumer {
     public void start() {
         try {
             if (log.isDebugEnabled()) {
-                log.info("[DLT Consumer] for topic = {} creating...", deadLetterTopic);
+                log.debug("[DLT Consumer] for topic = {} creating...", deadLetterTopic);
             }
             consumer = client.newConsumer()
                 .consumerName("commonDlt")
