@@ -111,8 +111,8 @@ public class MQTTCommonConsumer {
         }
 
         if (deadLetterProducer != null && deadLetterProducer.readyToBeDead(msg)) {
-            try {
-                throttlingSendExecutions.acquire();
+//            try {
+//                throttlingSendExecutions.acquire();
                 orderedSendExecutor.executeOrdered(virtualTopic, () -> {
                     try {
                         deadLetterProducer.send(msg);
@@ -120,12 +120,12 @@ public class MQTTCommonConsumer {
                     } catch (Exception e) {
                         log.warn("An error occurred while processing sendMessage. {}", e.getMessage(), e);
                     } finally {
-                        throttlingSendExecutions.release();
+//                        throttlingSendExecutions.release();
                     }
                 });
-            } catch (InterruptedException e) {
-                log.warn("An error occurred while processing sendMessage. {}", e.getMessage(), e);
-            }
+//            } catch (InterruptedException e) {
+//                log.warn("An error occurred while processing sendMessage. {}", e.getMessage(), e);
+//            }
             return;
         }
 
@@ -133,8 +133,8 @@ public class MQTTCommonConsumer {
 
         if (topicConsumers != null && topicConsumers.size() > 0) {
             topicConsumers.forEach(mqttConsumer -> {
-                try {
-                    throttlingSendExecutions.acquire();
+//                try {
+//                    throttlingSendExecutions.acquire();
                     orderedSendExecutor.executeOrdered(virtualTopic, () -> {
                         try {
                             int packetId = packetIdGenerator.nextPacketId();
@@ -171,12 +171,12 @@ public class MQTTCommonConsumer {
                             // So have to catch it.
                             log.warn("[{}] Could not send the message to consumer {}.", consumer.getConsumerName(), mqttConsumer.getConsumerName(), e);
                         } finally {
-                            throttlingSendExecutions.release();
+//                            throttlingSendExecutions.release();
                         }
                     });
-                } catch (InterruptedException e) {
-                    log.warn("An error occurred while processing sendMessage. {}", e.getMessage(), e);
-                }
+//                } catch (InterruptedException e) {
+//                    log.warn("An error occurred while processing sendMessage. {}", e.getMessage(), e);
+//                }
             });
         } else if (log.isDebugEnabled()) {
             if (log.isDebugEnabled()) {
