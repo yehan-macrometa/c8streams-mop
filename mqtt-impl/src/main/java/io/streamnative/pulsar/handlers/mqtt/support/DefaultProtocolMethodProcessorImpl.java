@@ -176,7 +176,7 @@ public class DefaultProtocolMethodProcessorImpl implements ProtocolMethodProcess
         OutstandingVirtualPacket packet = outstandingVirtualPacketContainer.remove(packetId);
         if (packet != null && packet.getConsumer() != null && packet.getConsumer().isConnected()) {
             try {
-                packet.getConsumer().acknowledge(packet.getMessageId());
+                packet.getConsumer().acknowledgeAsync(packet.getMessageId());
             } catch (Exception e) {
                 log.warn("Could not acknowledge message. {}", e.getMessage());
             }
