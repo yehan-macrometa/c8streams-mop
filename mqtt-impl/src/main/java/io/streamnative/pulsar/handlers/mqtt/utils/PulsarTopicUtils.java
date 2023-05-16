@@ -17,6 +17,9 @@ import static io.streamnative.pulsar.handlers.mqtt.utils.MqttUtils.isRegexFilter
 import com.google.common.base.Splitter;
 import io.streamnative.pulsar.handlers.mqtt.TopicFilter;
 import io.streamnative.pulsar.handlers.mqtt.TopicFilterImpl;
+
+import java.net.InetSocketAddress;
+import java.net.URI;
 import java.net.URLDecoder;
 import java.net.URLEncoder;
 import java.util.Collections;
@@ -27,6 +30,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.stream.Collectors;
 import org.apache.commons.lang3.tuple.Pair;
 import org.apache.pulsar.broker.PulsarService;
+import org.apache.pulsar.broker.lookup.LookupResult;
 import org.apache.pulsar.broker.namespace.LookupOptions;
 import org.apache.pulsar.broker.service.BrokerServiceException;
 import org.apache.pulsar.broker.service.Subscription;
@@ -71,7 +75,45 @@ public class PulsarTopicUtils {
                         }).thenCompose(isAllowTopicCreation ->
                                 getTopicReference(pulsarService, topic, isAllowTopicCreation)));
     }
-
+    
+    public static CompletableFuture<Optional<InetSocketAddress>> getBrokerUrl(PulsarService pulsarService, String topicName,
+                                                                              String defaultTenant, String defaultNamespace, boolean encodeTopicName, String defaultTopicDomain) {
+        final TopicName topic;
+        try {
+            topic = TopicName.get(getPulsarTopicName(topicName, defaultTenant, defaultNamespace, encodeTopicName,
+                TopicDomain.getEnum(defaultTopicDomain)));
+        } catch (Exception e) {
+            return FutureUtil.failedFuture(e);
+        }
+        return pulsarService.getNamespaceService().getBrokerServiceUrlAsync(topic,
+                LookupOptions.builder().authoritative(false).loadTopicsInBundle(false).build())
+            .thenApply(lookupOp ->
+                lookupOp.map(r -> {
+                    try {
+                        // always use plain(not TLS) url
+                        URI uri = new URI(r.getLookupData().getBrokerUrl());
+                        return InetSocketAddress.createUnresolved(uri.getHost(), uri.getPort());
+                    } catch (Exception e) {
+                        return null;
+                    }
+                }));
+    }
+    
+    public static CompletableFuture<Optional<Boolean>> isTopicRedirect(PulsarService pulsarService, String topicName,
+                                                                       String defaultTenant, String defaultNamespace, boolean encodeTopicName, String defaultTopicDomain) {
+        final TopicName topic;
+        try {
+            topic = TopicName.get(getPulsarTopicName(topicName, defaultTenant, defaultNamespace, encodeTopicName,
+                TopicDomain.getEnum(defaultTopicDomain)));
+        } catch (Exception e) {
+            return FutureUtil.failedFuture(e);
+        }
+        return pulsarService.getNamespaceService().getBrokerServiceUrlAsync(topic,
+                LookupOptions.builder().authoritative(false).loadTopicsInBundle(false).build())
+            .thenCompose(lookupOp -> CompletableFuture.completedFuture(lookupOp.map(LookupResult::isRedirect)));
+    }
+    
+    
     public static CompletableFuture<Optional<Topic>> getTopicReference(PulsarService pulsarService, String topicName,
                                                                        String defaultTenant, String defaultNamespace,
                                                                        boolean encodeTopicName,
