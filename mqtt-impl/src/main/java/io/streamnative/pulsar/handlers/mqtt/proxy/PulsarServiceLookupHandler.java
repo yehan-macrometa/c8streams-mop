@@ -86,14 +86,17 @@ public class PulsarServiceLookupHandler implements LookupHandler {
                                 String mqttBrokerUrls = protocol.get();
                                 String[] brokerUrls = mqttBrokerUrls.split(ConfigurationUtils.LISTENER_DEL);
                                 // Get url random
-                                Optional<String> brokerUrl = Arrays.stream(brokerUrls)
+                                List<String> plaintextBrokerUrls = Arrays.stream(brokerUrls)
                                         .filter(url -> url.startsWith(ConfigurationUtils.PLAINTEXT_PREFIX))
-                                        .findAny();
-                                if (!brokerUrl.isPresent()) {
+                                        .collect(Collectors.toList());
+                                if (plaintextBrokerUrls.isEmpty()) {
                                     return FutureUtil.failedFuture(new BrokerServiceException(
                                             "The broker does not enabled the mqtt protocol handler."));
                                 }
-                                String[] splits = brokerUrl.get().split(ConfigurationUtils.COLON);
+                                // Macrometa Corp Modification: spread connections among all plaintext server ports.
+                                String[] splits = plaintextBrokerUrls
+                                    .get(Math.abs(topicName.hashCode()) % plaintextBrokerUrls.size())
+                                    .split(ConfigurationUtils.COLON);
                                 String port = splits[splits.length - 1];
                                 int mqttBrokerPort = Integer.parseInt(port);
                                 return CompletableFuture.completedFuture(new InetSocketAddress(
