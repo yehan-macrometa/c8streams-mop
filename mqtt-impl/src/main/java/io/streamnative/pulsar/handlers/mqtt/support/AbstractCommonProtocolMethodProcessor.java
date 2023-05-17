@@ -17,6 +17,7 @@ import io.netty.channel.Channel;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.handler.codec.mqtt.MqttConnectMessage;
 import io.netty.handler.codec.mqtt.MqttConnectPayload;
+import io.netty.handler.codec.mqtt.MqttConnectVariableHeader;
 import io.netty.handler.codec.mqtt.MqttMessage;
 import io.netty.handler.codec.mqtt.MqttMessageBuilders;
 import io.netty.handler.codec.mqtt.MqttProperties;
@@ -70,6 +71,16 @@ public abstract class AbstractCommonProtocolMethodProcessor implements ProtocolM
         final int protocolVersion = msg.variableHeader().version();
         final String username = payload.userName();
         String clientId = payload.clientIdentifier();
+        MqttConnectVariableHeader variableHeader = connectMessage.variableHeader();
+        if (variableHeader.hasPassword() && !variableHeader.hasUserName()) {
+            connectMessage = MqttMessageUtils.cloneMqttConnectMessageWithUserNameFlag(connectMessage);
+            variableHeader = connectMessage.variableHeader();
+            if (log.isDebugEnabled()) {
+                log.debug("Proxy CONNECT message. Consists only password, username also should be present. " +
+                        "Set hasUserName = true CId={}, username={}.",
+                    clientId, username);
+            }
+        }
         if (log.isDebugEnabled()) {
             log.debug("[CONNECT] process CONNECT message. CId={}, username={}", clientId, username);
         }
@@ -95,7 +106,7 @@ public abstract class AbstractCommonProtocolMethodProcessor implements ProtocolM
         }
         // Client must specify the client ID except enable clean session on the connection.
         if (StringUtils.isEmpty(clientId)) {
-            if (!msg.variableHeader().isCleanSession()) {
+            if (!variableHeader.isCleanSession()) {
                 MqttMessage mqttMessage = MqttConnectAck.errorBuilder().identifierInvalid(protocolVersion);
                 log.error("[CONNECT] The MQTT client ID cannot be empty. Username={}", username);
                 adapter.setMqttMessage(mqttMessage);
@@ -136,8 +147,8 @@ public abstract class AbstractCommonProtocolMethodProcessor implements ProtocolM
             ClientRestrictions.ClientRestrictionsBuilder clientRestrictionsBuilder = ClientRestrictions.builder();
             MqttPropertyUtils.parsePropertiesToStuffRestriction(clientRestrictionsBuilder, msg);
             clientRestrictionsBuilder
-                    .keepAliveTime(msg.variableHeader().keepAliveTimeSeconds())
-                    .cleanSession(msg.variableHeader().isCleanSession());
+                    .keepAliveTime(variableHeader.keepAliveTimeSeconds())
+                    .cleanSession(variableHeader.isCleanSession());
             adapter.setMqttMessage(connectMessage);
             doProcessConnect(adapter, userRole, clientRestrictionsBuilder.build());
         } catch (InvalidReceiveMaximumException invalidReceiveMaximumException) {
