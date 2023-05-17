@@ -13,6 +13,8 @@
  */
 package io.streamnative.pulsar.handlers.mqtt.proxy;
 
+import com.github.benmanes.caffeine.cache.Cache;
+import com.github.benmanes.caffeine.cache.Caffeine;
 import com.google.common.collect.Lists;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.handler.codec.mqtt.MqttConnectMessage;
@@ -51,6 +53,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.stream.Collectors;
 import lombok.Getter;
@@ -90,6 +93,9 @@ public class MQTTProxyProtocolMethodProcessor extends AbstractCommonProtocolMeth
     private int pendingSendRequest = 0;
     private final int maxPendingSendRequest;
     private final int resumeReadThreshold;
+    
+    private static final Cache<String, String> topicCache =
+        Caffeine.newBuilder().expireAfterWrite(1, TimeUnit.HOURS).build();
 
     public MQTTProxyProtocolMethodProcessor(MQTTProxyService proxyService, ChannelHandlerContext ctx) {
         super(proxyService.getAuthenticationService(),
@@ -144,9 +150,20 @@ public class MQTTProxyProtocolMethodProcessor extends AbstractCommonProtocolMeth
                     msg.variableHeader().topicName(), connection.getClientId());
         }
         final int packetId = msg.variableHeader().packetId();
-        final String pulsarTopicName = PulsarTopicUtils.getEncodedPulsarTopicName(msg.variableHeader().topicName(),
+        final String topic;
+        if (proxyConfig.getSharder() != null) {
+            topic = proxyConfig.getSharder().getShardId(msg.variableHeader().topicName());
+            if (log.isDebugEnabled()) {
+                log.debug("[Proxy Publish] send topic = {} to real topic = {}, CId={}",
+                    msg.variableHeader().topicName(), topic, connection.getClientId());
+            }
+        } else {
+            topic = msg.variableHeader().topicName();
+        }
+        String pulsarTopicName = topicCache.get(topic, t ->
+            PulsarTopicUtils.getEncodedPulsarTopicName(msg.variableHeader().topicName(),
                 proxyConfig.getDefaultTenant(), proxyConfig.getDefaultNamespace(),
-                TopicDomain.getEnum(proxyConfig.getDefaultTopicDomain()));
+                TopicDomain.getEnum(proxyConfig.getDefaultTopicDomain())));
         adapter.setClientId(connection.getClientId());
         startPublish()
                 .thenCompose(__ ->  writeToBroker(pulsarTopicName, adapter))
@@ -199,9 +216,20 @@ public class MQTTProxyProtocolMethodProcessor extends AbstractCommonProtocolMeth
         adapter.setClientId(connection.getClientId());
         String topicName = packetIdTopic.remove(packetId);
         if (topicName != null) {
-            final String pulsarTopicName = PulsarTopicUtils.getEncodedPulsarTopicName(topicName,
+            final String topic;
+            if (proxyConfig.getSharder() != null) {
+                topic = proxyConfig.getSharder().getShardId(topicName);
+                if (log.isDebugEnabled()) {
+                    log.debug("[Proxy PubAck] ack topic = {} to real topic = {}, CId={}",
+                        topicName, topic, connection.getClientId());
+                }
+            } else {
+                topic = topicName;
+            }
+            String pulsarTopicName = topicCache.get(topic, t ->
+                PulsarTopicUtils.getEncodedPulsarTopicName(topicName,
                     proxyConfig.getDefaultTenant(), proxyConfig.getDefaultNamespace(),
-                    TopicDomain.getEnum(proxyConfig.getDefaultTopicDomain()));
+                    TopicDomain.getEnum(proxyConfig.getDefaultTopicDomain())));
             writeToBroker(pulsarTopicName, adapter)
                     .exceptionally(ex -> {
                         log.error("[Proxy Publish] Failed write pub ack {} to topic {} CId : {}",
@@ -294,6 +322,8 @@ public class MQTTProxyProtocolMethodProcessor extends AbstractCommonProtocolMeth
         final MqttSubscribeMessage msg = (MqttSubscribeMessage) adapter.getMqttMessage();
         for (MqttTopicSubscription subscription : msg.payload().topicSubscriptions()) {
             String topicFilter = subscription.topicName();
+            // TODO: we do not use filters for now. Virtual topic needs to be converted to real topic.
+            //  It has not been implemented yet.
             if (MqttUtils.isRegexFilter(topicFilter)) {
                 autoSubscribeHandler.register(
                         PulsarTopicUtils.getTopicFilter(topicFilter),
@@ -328,7 +358,13 @@ public class MQTTProxyProtocolMethodProcessor extends AbstractCommonProtocolMeth
         final MqttSubscribeMessage message = (MqttSubscribeMessage) adapter.getMqttMessage();
         final int packetId = message.variableHeader().messageId();
         List<CompletableFuture<Void>> futures = message.payload().topicSubscriptions().stream()
-                .map(subscription -> PulsarTopicUtils.asyncGetTopicListFromTopicSubscription(subscription.topicName(),
+                .map(subscription -> {
+                    String topic = proxyConfig.getSharder().getShardId(subscription.topicName());
+                    if (log.isDebugEnabled()) {
+                        log.debug("[Proxy Subscribe] send topic = {} to real topic = {}, CId={}",
+                            subscription.topicName(), topic, connection.getClientId());
+                    }
+                    return PulsarTopicUtils.asyncGetTopicListFromTopicSubscription(topic,
                                 proxyConfig.getDefaultTenant(), proxyConfig.getDefaultNamespace(), pulsarService,
                                 proxyConfig.getDefaultTopicDomain())
                         .thenCompose(pulsarTopicNames -> {
@@ -336,8 +372,8 @@ public class MQTTProxyProtocolMethodProcessor extends AbstractCommonProtocolMeth
                                 MqttAck subAck = MqttSubAck.successBuilder(connection.getProtocolVersion())
                                         .packetId(packetId)
                                         .grantedQos(new ArrayList<>(message.payload().topicSubscriptions().stream()
-                                                .map(MqttTopicSubscription::qualityOfService)
-                                                .collect(Collectors.toSet())))
+                                            .map(MqttTopicSubscription::qualityOfService)
+                                            .collect(Collectors.toSet())))
                                         .build();
                                 connection.sendAck(subAck);
                                 return CompletableFuture.completedFuture(null);
@@ -347,34 +383,35 @@ public class MQTTProxyProtocolMethodProcessor extends AbstractCommonProtocolMeth
                             }
                             List<CompletableFuture<Void>> writeFutures = pulsarTopicNames.stream()
                                     .map(encodedPulsarTopicName -> {
-                                        String mqttTopicName = getMqttTopicName(subscription,
-                                                encodedPulsarTopicName);
+                                        String mqttTopicName = getMqttTopicName(topic,
+                                            encodedPulsarTopicName);
                                         MqttSubscribeMessage subscribeMessage = MqttMessageBuilders.subscribe()
-                                                .messageId(message.variableHeader().messageId())
-                                                .addSubscription(subscription.qualityOfService(), mqttTopicName)
-                                                .properties(message.idAndPropertiesVariableHeader().properties())
-                                                .build();
+                                            .messageId(message.variableHeader().messageId())
+                                            .addSubscription(subscription.qualityOfService(), mqttTopicName)
+                                            .properties(message.idAndPropertiesVariableHeader().properties())
+                                            .build();
                                         MqttAdapterMessage mqttAdapterMessage =
-                                                new MqttAdapterMessage(connection.getClientId(), subscribeMessage);
+                                            new MqttAdapterMessage(connection.getClientId(), subscribeMessage);
                                         return writeToBroker(encodedPulsarTopicName, mqttAdapterMessage)
-                                                .thenAccept(__ ->
-                                                        registerAdapterChannelInactiveListener(encodedPulsarTopicName));
+                                            .thenAccept(__ ->
+                                                registerAdapterChannelInactiveListener(encodedPulsarTopicName));
                                     }).collect(Collectors.toList());
                             return FutureUtil.waitForAll(writeFutures);
-                        })
+                        });
+                    }
                 ).collect(Collectors.toList());
         return FutureUtil.waitForAll(futures);
     }
 
-    private String getMqttTopicName(MqttTopicSubscription subscription, String encodedPulsarTopicName) {
+    private String getMqttTopicName(String subscriptionTopicName, String encodedPulsarTopicName) {
         TopicName encodedPulsarTopicNameObj = TopicName.get(encodedPulsarTopicName);
         boolean isDefaultPulsarEncodedTopicName = PulsarTopicUtils.isDefaultDomainAndNs(
                 encodedPulsarTopicNameObj, proxyConfig.getDefaultTopicDomain(),
                 proxyConfig.getDefaultTenant(), proxyConfig.getDefaultNamespace());
         if (isDefaultPulsarEncodedTopicName) {
-            return MqttUtils.isRegexFilter(subscription.topicName())
+            return MqttUtils.isRegexFilter(subscriptionTopicName)
                     ? Codec.decode(encodedPulsarTopicNameObj.getLocalName())
-                    : subscription.topicName();
+                    : subscriptionTopicName;
         } else {
             return Codec.decode(encodedPulsarTopicName);
         }
