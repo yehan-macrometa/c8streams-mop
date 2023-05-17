@@ -25,11 +25,17 @@ import io.netty.channel.ChannelInitializer;
 import io.netty.channel.socket.SocketChannel;
 import io.streamnative.pulsar.handlers.mqtt.proxy.MQTTProxyConfiguration;
 import io.streamnative.pulsar.handlers.mqtt.proxy.MQTTProxyService;
+import io.streamnative.pulsar.handlers.mqtt.proxy.PulsarServiceLookupHandler;
+import io.streamnative.pulsar.handlers.mqtt.sharding.ConsistentHashSharder;
+import io.streamnative.pulsar.handlers.mqtt.sharding.Sharder;
 import io.streamnative.pulsar.handlers.mqtt.utils.ConfigurationUtils;
 import java.net.InetSocketAddress;
+import java.util.Arrays;
+import java.util.List;
 import java.util.Map;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.bookkeeper.common.util.OrderedExecutor;
 import org.apache.pulsar.broker.ServiceConfiguration;
 import org.apache.pulsar.broker.ServiceConfigurationUtils;
 import org.apache.pulsar.broker.protocol.ProtocolHandler;
@@ -53,7 +59,7 @@ public class MQTTProtocolHandler implements ProtocolHandler {
 
     @Getter
     private MQTTService mqttService;
-
+    
     @Override
     public String protocolName() {
         return PROTOCOL_NAME;
@@ -70,9 +76,22 @@ public class MQTTProtocolHandler implements ProtocolHandler {
         mqttConfig = ConfigurationUtils.create(conf.getProperties(), MQTTServerConfiguration.class);
         // We have to enable ack batch message individual.
         mqttConfig.setAcknowledgmentAtBatchIndexLevelEnabled(true);
+        mqttConfig.setSharder(initSharder(mqttConfig.getAllRealTopics()));
+        mqttConfig.setOrderedPublishExecutor(OrderedExecutor.newBuilder()
+            .name("mqtt-pulsar-producer")
+            .numThreads(50)
+            .build());
+        
         this.bindAddress = ServiceConfigurationUtils.getDefaultOrConfiguredAddress(mqttConfig.getBindAddress());
     }
-
+    
+    public static Sharder initSharder(List<String> allRealTopics) {
+        if (allRealTopics.isEmpty()) {
+            return null;
+        }
+        return new ConsistentHashSharder(1000, allRealTopics);
+    }
+    
     @Override
     public String getProtocolDataToAdvertise() {
         if (log.isDebugEnabled()) {
@@ -85,17 +104,58 @@ public class MQTTProtocolHandler implements ProtocolHandler {
     public void start(BrokerService brokerService) {
         this.brokerService = brokerService;
         mqttService = new MQTTService(brokerService, mqttConfig);
+        
         if (mqttConfig.isMqttProxyEnabled() || mqttConfig.isMqttProxyEnable()) {
-            try {
-                MQTTProxyConfiguration proxyConfig =
+            Arrays.stream(mqttConfig.getMqttProxyPorts().split(",")).map(Integer::parseInt).forEach(port -> {
+                try {
+                    MQTTProxyConfiguration proxyConfig =
                         ConfigurationUtils.create(mqttConfig.getProperties(), MQTTProxyConfiguration.class);
-                proxyService = new MQTTProxyService(mqttService, proxyConfig);
-                proxyService.start();
-                log.info("Start MQTT proxy service at port: {}", proxyConfig.getMqttProxyPort());
-            } catch (Exception ex) {
-                log.error("Failed to start MQTT proxy service.", ex);
-            }
+                    proxyConfig.setMqttProxyPort(port);
+                    proxyConfig.setMqttProxyTlsEnabled(false);
+                    proxyConfig.setMqttProxyTlsPskEnabled(false);
+                    proxyService = new MQTTProxyService(mqttService, proxyConfig);
+                    proxyService.start();
+                    log.info("Start MQTT proxy service at port: {}", proxyConfig.getMqttProxyPort());
+                } catch (Exception ex) {
+                    log.error("Failed to start MQTT proxy service.", ex);
+                }
+            });
         }
+        
+        if (mqttConfig.isMqttProxyTlsEnabled()) {
+            Arrays.stream(mqttConfig.getMqttProxyTlsPorts().split(",")).map(Integer::parseInt).forEach(port -> {
+                try {
+                    MQTTProxyConfiguration proxyConfig =
+                        ConfigurationUtils.create(mqttConfig.getProperties(), MQTTProxyConfiguration.class);
+                    proxyConfig.setMqttProxyTlsPort(port);
+                    proxyConfig.setMqttProxyEnabled(false);
+                    proxyConfig.setMqttProxyTlsPskEnabled(false);
+                    proxyService = new MQTTProxyService(mqttService, proxyConfig);
+                    proxyService.start();
+                    log.info("Start MQTT proxy service at port: {}", proxyConfig.getMqttProxyTlsPort());
+                } catch (Exception ex) {
+                    log.error("Failed to start MQTT proxy service.", ex);
+                }
+            });
+        }
+        
+        if (mqttConfig.isMqttProxyTlsPskEnabled()) {
+            Arrays.stream(mqttConfig.getMqttProxyTlsPorts().split(",")).map(Integer::parseInt).forEach(port -> {
+                try {
+                    MQTTProxyConfiguration proxyConfig =
+                        ConfigurationUtils.create(mqttConfig.getProperties(), MQTTProxyConfiguration.class);
+                    proxyConfig.setMqttProxyTlsPskPort(port);
+                    proxyConfig.setMqttProxyEnabled(false);
+                    proxyConfig.setMqttProxyTlsEnabled(false);
+                    proxyService = new MQTTProxyService(mqttService, proxyConfig);
+                    proxyService.start();
+                    log.info("Start MQTT proxy service at port: {}", proxyConfig.getMqttProxyTlsPskPort());
+                } catch (Exception ex) {
+                    log.error("Failed to start MQTT proxy service.", ex);
+                }
+            });
+        }
+        
         log.info("Starting MqttProtocolHandler, MoP version is: '{}'", MopVersion.getVersion());
         log.info("Git Revision {}", MopVersion.getGitSha());
         log.info("Built by {} on {} at {}",

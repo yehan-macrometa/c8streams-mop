@@ -104,12 +104,14 @@ public class MQTTProxyService implements Closeable {
         serverBootstrap.channel(EventLoopUtil.getServerSocketChannelClass(workerGroup));
         EventLoopUtil.enableTriggeredMode(serverBootstrap);
         serverBootstrap.childHandler(new MQTTProxyChannelInitializer(this, proxyConfig, false));
-
-        try {
-            listenChannel = serverBootstrap.bind(proxyConfig.getMqttProxyPort()).sync().channel();
-            log.info("Started MQTT Proxy on {}", listenChannel.localAddress());
-        } catch (InterruptedException e) {
-            throw new MQTTProxyException(e);
+        
+        if (proxyConfig.isMqttProxyEnabled()) {
+            try {
+                listenChannel = serverBootstrap.bind(proxyConfig.getMqttProxyPort()).sync().channel();
+                log.info("Started MQTT Proxy on {}", listenChannel.localAddress());
+            } catch (InterruptedException e) {
+                throw new MQTTProxyException(e);
+            }
         }
 
         if (proxyConfig.isMqttProxyTlsEnabled()) {
