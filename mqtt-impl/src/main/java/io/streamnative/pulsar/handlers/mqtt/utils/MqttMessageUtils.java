@@ -19,6 +19,7 @@ import io.netty.buffer.Unpooled;
 import io.netty.channel.Channel;
 import io.netty.handler.codec.mqtt.MqttConnectMessage;
 import io.netty.handler.codec.mqtt.MqttConnectPayload;
+import io.netty.handler.codec.mqtt.MqttConnectVariableHeader;
 import io.netty.handler.codec.mqtt.MqttFixedHeader;
 import io.netty.handler.codec.mqtt.MqttMessage;
 import io.netty.handler.codec.mqtt.MqttMessageType;
@@ -80,7 +81,18 @@ public class MqttMessageUtils {
                 origin.willMessageInBytes(), origin.userName(), origin.passwordInBytes());
         return new MqttConnectMessage(msg.fixedHeader(), msg.variableHeader(), payload);
     }
-
+    
+    public static MqttConnectMessage cloneMqttConnectMessageWithUserNameFlag(MqttConnectMessage msg) {
+        MqttConnectVariableHeader origin = msg.variableHeader();
+        MqttConnectVariableHeader variableHeader = new MqttConnectVariableHeader(
+            origin.name(), origin.version(), true, true,
+            origin.isWillRetain(), origin.willQos(), origin.isWillFlag(),
+            origin.isCleanSession(), origin.keepAliveTimeSeconds(), origin.properties()
+        );
+        return new MqttConnectMessage(msg.fixedHeader(), variableHeader, msg.payload());
+    }
+    
+    
     public static List<MqttTopicSubscription> topicSubscriptions(MqttSubscribeMessage msg) {
         List<MqttTopicSubscription> ackTopics = new ArrayList<>();
 

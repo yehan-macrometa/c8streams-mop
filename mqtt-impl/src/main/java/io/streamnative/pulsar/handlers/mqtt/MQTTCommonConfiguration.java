@@ -15,11 +15,18 @@ package io.streamnative.pulsar.handlers.mqtt;
 
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.Sets;
+
+import java.util.Collections;
 import java.util.List;
 import java.util.Objects;
 import java.util.Set;
+import java.util.stream.Collectors;
+import java.util.stream.IntStream;
+
+import io.streamnative.pulsar.handlers.mqtt.sharding.Sharder;
 import lombok.Getter;
 import lombok.Setter;
+import org.apache.bookkeeper.common.util.OrderedExecutor;
 import org.apache.commons.collections4.CollectionUtils;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.pulsar.broker.ServiceConfiguration;
@@ -106,6 +113,13 @@ public class MQTTCommonConfiguration extends ServiceConfiguration {
             doc = "The mqtt proxy port"
     )
     private int mqttProxyPort = 5682;
+    
+    @FieldContext(
+        category = CATEGORY_MQTT_PROXY,
+        required = false,
+        doc = "The mqtt proxy ports, separator is ','"
+    )
+    private String mqttProxyPorts = "5682";
 
     @FieldContext(
             category = CATEGORY_MQTT_PROXY,
@@ -113,6 +127,13 @@ public class MQTTCommonConfiguration extends ServiceConfiguration {
             doc = "The mqtt proxy tls port"
     )
     private int mqttProxyTlsPort = 5683;
+    
+    @FieldContext(
+        category = CATEGORY_MQTT_PROXY,
+        required = false,
+        doc = "The mqtt proxy tls ports, separator is ','"
+    )
+    private String mqttProxyTlsPorts = "5683";
 
     @FieldContext(
             category = CATEGORY_MQTT_PROXY,
@@ -120,7 +141,14 @@ public class MQTTCommonConfiguration extends ServiceConfiguration {
             doc = "The mqtt proxy tls psk port"
     )
     private int mqttProxyTlsPskPort = 5684;
-
+    
+    @FieldContext(
+        category = CATEGORY_MQTT_PROXY,
+        required = false,
+        doc = "The mqtt proxy tls psk ports, separator is ','"
+    )
+    private String mqttProxyTlsPskPorts = "5684";
+    
     @FieldContext(
             category = CATEGORY_MQTT_PROXY,
             required = false,
@@ -339,7 +367,62 @@ public class MQTTCommonConfiguration extends ServiceConfiguration {
             doc = "Event center callback pool size."
     )
     private int eventCenterCallbackPoolThreadNum = 1;
-
+    
+    @FieldContext(
+        category = CATEGORY_MQTT,
+        doc = "Count `real topics` in all brokers. If it is set to `0` then it doesn't redirect to a `real topic`."
+    )
+    private int mqttRealTopicCount = 0;
+    
+    @FieldContext(
+        category = CATEGORY_MQTT,
+        doc = "Add prefix to `real topic` name. Example of the name `topic_0` if mqttRealTopicNamePrefix = 'topic'."
+    )
+    private String mqttRealTopicNamePrefix = null;
+    
+    @FieldContext(
+        category = CATEGORY_MQTT,
+        doc = "Number of threads handling the MQTT consumer path."
+    )
+    private int mqttNumConsumerThreads = 8;
+    
+    @FieldContext(
+        category = CATEGORY_MQTT_PROXY,
+        doc = "Max delay ms sending messages to broker"
+    )
+    private int mqttProxyMaxDelayMs = 0;
+    
+    @FieldContext(
+        category = CATEGORY_MQTT_PROXY,
+        doc = "Max number of messages in a batch for sending to a broker"
+    )
+    private int mqttProxyMaxMsgInBatch = 500;
+    
+    /**
+     * Sharder to select the correct shard for the given topics
+     */
+    private Sharder sharder;
+    
+    /**
+     * Executor responsible for publishing messages
+     */
+    private OrderedExecutor orderedPublishExecutor;
+    
+    private List<String> allRealTopics;
+    
+    public List<String> getAllRealTopics() {
+        if (allRealTopics == null) {
+            if (mqttRealTopicCount < 1) {
+                allRealTopics = Collections.EMPTY_LIST;
+            } else {
+                allRealTopics = IntStream.range(0, mqttRealTopicCount)
+                    .mapToObj(i -> String.format("%s_%d", mqttRealTopicNamePrefix, i))
+                    .collect(Collectors.toList());
+            }
+        }
+        return allRealTopics;
+    }
+    
     public long getMqttTlsCertRefreshCheckDurationSec() {
         if (getTlsCertRefreshCheckDurationSec() != 300) {
             return getTlsCertRefreshCheckDurationSec();

@@ -30,4 +30,29 @@ public class MQTTServerConfiguration extends MQTTCommonConfiguration {
             doc = "Listener for the MQTT Server."
     )
     private String mqttListeners = "mqtt://127.0.0.1:1883";
+    
+    @FieldContext(
+        category = CATEGORY_MQTT,
+        doc = "Set number of subscribers for one real topic. Should be `1` or more."
+    )
+    private int mqttRealTopicSubscribersCount = 1;
+    
+    @FieldContext(
+        category = CATEGORY_MQTT,
+        doc = "Set time in seconds how long take message in an original pulsar topic."
+    )
+    private int mqttMaxRedeliverTimeSec = 60;
+    
+    @FieldContext(
+        category = CATEGORY_MQTT,
+        doc = "Default messages per second dispatch throttling-limit for every pulsar topic. Using a value of 0, is disabling default"
+    )
+    private int mqttDLTThrottlingRatePerTopicInMsg = 100;
+    
+    @FieldContext(
+        category = CATEGORY_MQTT,
+        doc = "Init all common consumers at start time"
+    )
+    private boolean mqttInitCommonConsumers = false;
+    
 }
