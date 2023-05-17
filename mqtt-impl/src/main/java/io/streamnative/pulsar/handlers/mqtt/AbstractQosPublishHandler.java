@@ -25,6 +25,8 @@ import io.streamnative.pulsar.handlers.mqtt.utils.MessagePublishContext;
 import io.streamnative.pulsar.handlers.mqtt.utils.PulsarTopicUtils;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
+
+import lombok.extern.slf4j.Slf4j;
 import org.apache.bookkeeper.mledger.impl.PositionImpl;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.pulsar.broker.PulsarService;
@@ -36,6 +38,7 @@ import org.apache.pulsar.common.util.FutureUtil;
 /**
  * Abstract class for publish handler.
  */
+@Slf4j
 public abstract class AbstractQosPublishHandler implements QosPublishHandler {
 
     protected final PulsarService pulsarService;
@@ -48,8 +51,12 @@ public abstract class AbstractQosPublishHandler implements QosPublishHandler {
         this.configuration = mqttService.getServerConfiguration();
     }
 
-    protected CompletableFuture<Optional<Topic>> getTopicReference(String mqttTopicName) {
-        return PulsarTopicUtils.getTopicReference(pulsarService, mqttTopicName,
+    protected CompletableFuture<Optional<Topic>> getTopicReference(String virtualTopicName) {
+        String realTopicName = configuration.getSharder().getShardId(virtualTopicName);
+        if (log.isDebugEnabled()) {
+            log.debug("[publish] to mqtt topic = {}, pulsar topic = {}", virtualTopicName, realTopicName);
+        }
+        return PulsarTopicUtils.getTopicReference(pulsarService, realTopicName,
                 configuration.getDefaultTenant(), configuration.getDefaultNamespace(), true
                 , configuration.getDefaultTopicDomain());
     }
@@ -89,8 +96,10 @@ public abstract class AbstractQosPublishHandler implements QosPublishHandler {
         } else {
             mqttTopicName = msg.variableHeader().topicName();
         }
-        return getTopicReference(mqttTopicName).thenCompose(topicOp -> topicOp.map(topic -> {
-            MessageImpl<byte[]> message = toPulsarMsg(topic, msg.variableHeader().properties(),
+        String realTopicName = configuration.getSharder().getShardId(mqttTopicName);
+        log.debug("[publish] to real topic {}", realTopicName);
+        return getTopicReference(realTopicName).thenCompose(topicOp -> topicOp.map(topic -> {
+            MessageImpl<byte[]> message = toPulsarMsg(mqttTopicName, msg.variableHeader().properties(),
                     msg.payload().nioBuffer());
             CompletableFuture<PositionImpl> ret = MessagePublishContext.publishMessages(message, topic);
             message.recycle();

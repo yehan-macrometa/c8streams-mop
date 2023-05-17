@@ -32,11 +32,14 @@ import io.streamnative.pulsar.handlers.mqtt.MQTTService;
 import io.streamnative.pulsar.handlers.mqtt.MQTTSubscriptionManager;
 import io.streamnative.pulsar.handlers.mqtt.OutstandingPacket;
 import io.streamnative.pulsar.handlers.mqtt.OutstandingPacketContainer;
+import io.streamnative.pulsar.handlers.mqtt.OutstandingVirtualPacket;
+import io.streamnative.pulsar.handlers.mqtt.OutstandingVirtualPacketContainer;
 import io.streamnative.pulsar.handlers.mqtt.PacketIdGenerator;
 import io.streamnative.pulsar.handlers.mqtt.QosPublishHandlers;
 import io.streamnative.pulsar.handlers.mqtt.TopicFilter;
 import io.streamnative.pulsar.handlers.mqtt.adapter.MqttAdapterMessage;
 import io.streamnative.pulsar.handlers.mqtt.exception.MQTTNoSubscriptionExistedException;
+import io.streamnative.pulsar.handlers.mqtt.exception.MQTTServerException;
 import io.streamnative.pulsar.handlers.mqtt.exception.MQTTTopicNotExistedException;
 import io.streamnative.pulsar.handlers.mqtt.exception.restrictions.InvalidSessionExpireIntervalException;
 import io.streamnative.pulsar.handlers.mqtt.messages.MqttPropertyUtils;
@@ -69,6 +72,7 @@ import java.util.stream.Collectors;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.bookkeeper.mledger.impl.PositionImpl;
+import org.apache.commons.lang3.tuple.Pair;
 import org.apache.pulsar.broker.PulsarService;
 import org.apache.pulsar.broker.authentication.AuthenticationDataCommand;
 import org.apache.pulsar.broker.authorization.AuthorizationService;
@@ -91,7 +95,9 @@ public class MQTTBrokerProtocolMethodProcessor extends AbstractCommonProtocolMet
     private final MQTTServerConfiguration configuration;
     private final MQTTServerCnx serverCnx;
     private final PacketIdGenerator packetIdGenerator;
-    private final OutstandingPacketContainer outstandingPacketContainer;
+    //private final OutstandingPacketContainer outstandingPacketContainer;
+    
+    private final OutstandingVirtualPacketContainer outstandingVirtualPacketContainer;
     private final AuthorizationService authorizationService;
     private final MQTTMetricsCollector metricsCollector;
     private final MQTTConnectionManager connectionManager;
@@ -102,6 +108,7 @@ public class MQTTBrokerProtocolMethodProcessor extends AbstractCommonProtocolMet
     private Connection connection;
     @Getter
     private final CompletableFuture<Void> inactiveFuture = new CompletableFuture<>();
+    private final MQTTService mqttService;
 
     public MQTTBrokerProtocolMethodProcessor(MQTTService mqttService, ChannelHandlerContext ctx) {
         super(mqttService.getAuthenticationService(),
@@ -110,7 +117,8 @@ public class MQTTBrokerProtocolMethodProcessor extends AbstractCommonProtocolMet
         this.configuration = mqttService.getServerConfiguration();
         this.qosPublishHandlers = mqttService.getQosPublishHandlers();
         this.packetIdGenerator = PacketIdGenerator.newNonZeroGenerator();
-        this.outstandingPacketContainer = new OutstandingPacketContainerImpl();
+        //this.outstandingPacketContainer = new OutstandingPacketContainerImpl();
+        this.outstandingVirtualPacketContainer = new OutstandingVirtualPacketContainerImpl();
         this.authorizationService = mqttService.getAuthorizationService();
         this.metricsCollector = mqttService.getMetricsCollector();
         this.connectionManager = mqttService.getConnectionManager();
@@ -119,6 +127,7 @@ public class MQTTBrokerProtocolMethodProcessor extends AbstractCommonProtocolMet
         this.retainedMessageHandler = mqttService.getRetainedMessageHandler();
         this.serverCnx = new MQTTServerCnx(pulsarService, ctx);
         this.autoSubscribeHandler = new AutoSubscribeHandler(mqttService.getEventCenter());
+        this.mqttService = mqttService;
     }
 
     @Override
@@ -153,22 +162,28 @@ public class MQTTBrokerProtocolMethodProcessor extends AbstractCommonProtocolMet
         }
         final MqttPubAckMessage msg = (MqttPubAckMessage) adapter.getMqttMessage();
         int packetId = msg.variableHeader().messageId();
-        OutstandingPacket packet = outstandingPacketContainer.remove(packetId);
+        //OutstandingPacket packet = outstandingPacketContainer.remove(packetId);
+        OutstandingVirtualPacket packet = outstandingVirtualPacketContainer.remove(packetId);
         if (packet != null) {
-            PositionImpl position;
-            if (packet.isBatch()) {
-                long[] ackSets = new long[packet.getBatchSize()];
-                for (int i = 0; i < packet.getBatchSize(); i++) {
-                    ackSets[i] = packet.getBatchIndex() == i ? 0 : 1;
-                }
-                position = PositionImpl.get(packet.getLedgerId(), packet.getEntryId(), ackSets);
-            } else {
-                position = PositionImpl.get(packet.getLedgerId(), packet.getEntryId());
+            try {
+                packet.getConsumer().acknowledgeAsync(packet.getMessageId());
+            } catch (Exception e) {
+                log.warn("Could not acknowledge message. {}", e.getMessage());
             }
-            packet.getConsumer().getSubscription().acknowledgeMessage(Collections.singletonList(position),
-                    CommandAck.AckType.Individual, Collections.emptyMap());
-            packet.getConsumer().getPendingAcks().remove(packet.getLedgerId(), packet.getEntryId());
-            packet.getConsumer().incrementPermits();
+//            PositionImpl position;
+//            if (packet.isBatch()) {
+//                long[] ackSets = new long[packet.getBatchSize()];
+//                for (int i = 0; i < packet.getBatchSize(); i++) {
+//                    ackSets[i] = packet.getBatchIndex() == i ? 0 : 1;
+//                }
+//                position = PositionImpl.get(packet.getLedgerId(), packet.getEntryId(), ackSets);
+//            } else {
+//                position = PositionImpl.get(packet.getLedgerId(), packet.getEntryId());
+//            }
+//            packet.getConsumer().getSubscription().acknowledgeMessage(Collections.singletonList(position),
+//                    CommandAck.AckType.Individual, Collections.emptyMap());
+//            packet.getConsumer().getPendingAcks().remove(packet.getLedgerId(), packet.getEntryId());
+//            packet.getConsumer().incrementPermits();
         }
     }
 
@@ -385,9 +400,9 @@ public class MQTTBrokerProtocolMethodProcessor extends AbstractCommonProtocolMet
         List<CompletableFuture<Void>> futureList = new ArrayList<>(subTopics.size());
         Optional<String> retainedTopic = Optional.empty();
         for (MqttTopicSubscription subTopic : subTopics) {
-            if (MqttUtils.isRegexFilter(subTopic.topicName())) {
-                registerRegexTopicFilterListener(subTopic);
-            }
+//            if (MqttUtils.isRegexFilter(subTopic.topicName())) {
+//                registerRegexTopicFilterListener(subTopic);
+//            }
             if (!retainedTopic.isPresent()) {
                 retainedTopic = retainedMessageHandler.getRetainedTopic(subTopic.topicName());
             }
@@ -398,12 +413,23 @@ public class MQTTBrokerProtocolMethodProcessor extends AbstractCommonProtocolMet
             CompletableFuture<Void> completableFuture = topicListFuture.thenCompose(topics -> {
                 List<CompletableFuture<Void>> futures = new ArrayList<>();
                 for (String topic : topics) {
-                    CompletableFuture<Subscription> subFuture = PulsarTopicUtils
+                    /*CompletableFuture<Subscription> subFuture = PulsarTopicUtils
                             .getOrCreateSubscription(pulsarService, topic, connection.getClientId(),
                                     configuration.getDefaultTenant(), configuration.getDefaultNamespace(),
                                     configuration.getDefaultTopicDomain(), initPosition);
                     CompletableFuture<Void> result = subFuture.thenCompose(sub ->
-                            createAndSubConsumer(sub, subTopic, topic));
+                            createAndSubConsumer(sub, subTopic, topic));*/
+                    CompletableFuture<Void> result = mqttService.getCommonConsumers(topic).thenAccept(consumerGroup -> {
+                        try {
+                            MQTTVirtualConsumer consumer = new MQTTVirtualConsumer(topic, connection, serverCnx,
+                                subTopic.qualityOfService(), packetIdGenerator, subTopic.topicName(), outstandingVirtualPacketContainer);
+                            log.info("MqttVirtualTopics: Registering to common consumer {}", subTopic.topicName());
+                            consumerGroup.add(subTopic.topicName(), consumer);
+                            connection.getTopicSubscriptionManager().putIfAbsent(subTopic.topicName(), consumerGroup, consumer);
+                        } catch (Exception e) {
+                            throw new MQTTServerException(e);
+                        }
+                    });
                     futures.add(result);
                 }
                 return FutureUtil.waitForAll(Collections.unmodifiableList(futures));
@@ -453,42 +479,42 @@ public class MQTTBrokerProtocolMethodProcessor extends AbstractCommonProtocolMet
         });
     }
 
-    private void registerRegexTopicFilterListener(MqttTopicSubscription subTopic) {
-        autoSubscribeHandler.register(
-                PulsarTopicUtils.getTopicFilter(subTopic.topicName()),
-            (encodedChangedTopic) -> PulsarTopicUtils.getOrCreateSubscription(pulsarService,
-                            encodedChangedTopic, connection.getClientId(), configuration.getDefaultTenant(),
-                            configuration.getDefaultNamespace(), configuration.getDefaultTopicDomain(),
-                            CommandSubscribe.InitialPosition.Earliest)
-                    .thenCompose(sub -> {
-                        Optional<String> existConsumer = sub.getConsumers().stream().map(Consumer::consumerName)
-                                .filter(name -> Objects.equals(name, connection.getClientId()))
-                                .findAny();
-                        if (existConsumer.isPresent()) {
-                            return CompletableFuture.completedFuture(null);
-                        }
-                        return createAndSubConsumer(sub, subTopic, encodedChangedTopic);
-                    })
-                    .thenRun(() -> log.info("[{}] Subscribe new topic [{}] success", connection.getClientId(),
-                            Codec.decode(encodedChangedTopic)))
-                    .exceptionally(ex -> {
-                        log.error("[{}][Subscribe] Fail to subscribe new topic [{}] "
-                                        + "for topic filter [{}]", connection.getClientId(), encodedChangedTopic,
-                                subTopic.topicName());
-                        return null;
-                    }));
-    }
+//    private void registerRegexTopicFilterListener(MqttTopicSubscription subTopic) {
+//        autoSubscribeHandler.register(
+//                PulsarTopicUtils.getTopicFilter(subTopic.topicName()),
+//            (encodedChangedTopic) -> PulsarTopicUtils.getOrCreateSubscription(pulsarService,
+//                            encodedChangedTopic, connection.getClientId(), configuration.getDefaultTenant(),
+//                            configuration.getDefaultNamespace(), configuration.getDefaultTopicDomain(),
+//                            CommandSubscribe.InitialPosition.Earliest)
+//                    .thenCompose(sub -> {
+//                        Optional<String> existConsumer = sub.getConsumers().stream().map(Consumer::consumerName)
+//                                .filter(name -> Objects.equals(name, connection.getClientId()))
+//                                .findAny();
+//                        if (existConsumer.isPresent()) {
+//                            return CompletableFuture.completedFuture(null);
+//                        }
+//                        return createAndSubConsumer(sub, subTopic, encodedChangedTopic);
+//                    })
+//                    .thenRun(() -> log.info("[{}] Subscribe new topic [{}] success", connection.getClientId(),
+//                            Codec.decode(encodedChangedTopic)))
+//                    .exceptionally(ex -> {
+//                        log.error("[{}][Subscribe] Fail to subscribe new topic [{}] "
+//                                        + "for topic filter [{}]", connection.getClientId(), encodedChangedTopic,
+//                                subTopic.topicName());
+//                        return null;
+//                    }));
+//    }
 
-    private CompletableFuture<Void> createAndSubConsumer(Subscription sub,
-                                                         MqttTopicSubscription subTopic,
-                                                         String pulsarTopicName) {
-        MQTTConsumer consumer = new MQTTConsumer(sub, subTopic.topicName(), pulsarTopicName, connection, serverCnx,
-                subTopic.qualityOfService(), packetIdGenerator, outstandingPacketContainer, metricsCollector);
-        return sub.addConsumer(consumer).thenAccept(__ -> {
-            consumer.addAllPermits();
-            connection.getTopicSubscriptionManager().putIfAbsent(sub.getTopic(), sub, consumer);
-        });
-    }
+//    private CompletableFuture<Void> createAndSubConsumer(Subscription sub,
+//                                                         MqttTopicSubscription subTopic,
+//                                                         String pulsarTopicName) {
+//        MQTTConsumer consumer = new MQTTConsumer(sub, subTopic.topicName(), pulsarTopicName, connection, serverCnx,
+//                subTopic.qualityOfService(), packetIdGenerator, outstandingPacketContainer, metricsCollector);
+//        return sub.addConsumer(consumer).thenAccept(__ -> {
+//            consumer.addAllPermits();
+//            connection.getTopicSubscriptionManager().putIfAbsent(sub.getTopic(), sub, consumer);
+//        });
+//    }
 
     @Override
     public void processUnSubscribe(MqttAdapterMessage adapter) {
@@ -510,17 +536,8 @@ public class MQTTBrokerProtocolMethodProcessor extends AbstractCommonProtocolMet
             }
             CompletableFuture<Void> future = topicListFuture.thenCompose(topics -> {
                 List<CompletableFuture<Void>> futures = topics.stream()
-                        .map(topic -> PulsarTopicUtils.getTopicReference(pulsarService,
-                                topic, configuration.getDefaultTenant(), configuration.getDefaultNamespace(), false,
-                                configuration.getDefaultTopicDomain(), false))
-                        .map(topicFuture -> topicFuture.thenCompose(topicOp -> {
-                            if (!topicOp.isPresent()) {
-                                throw new MQTTTopicNotExistedException(
-                                        String.format("Can not found topic when %s unSubscribe.", clientId));
-                            }
-                            return connection.getTopicSubscriptionManager()
-                                    .unsubscribe(topicOp.get(), false);
-                        }))
+                        .map(topic -> connection.getTopicSubscriptionManager()
+                                .unsubscribe(topic, false))
                         .collect(Collectors.toList());
                 return FutureUtil.waitForAll(futures);
             });

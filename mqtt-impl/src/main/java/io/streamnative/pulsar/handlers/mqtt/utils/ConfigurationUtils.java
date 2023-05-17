@@ -122,7 +122,7 @@ public final class ConfigurationUtils {
      * @throws IllegalArgumentException
      *             if the properties key-value contains incorrect value type
      */
-    public static <T> void update(Map<String, String> properties, T obj) throws IllegalArgumentException {
+    public static <T> void update(Map<String, Object> properties, T obj) throws IllegalArgumentException {
         Field[] fields = obj.getClass().getDeclaredFields();
         // common fields
         Field[] commonFields = obj.getClass().getSuperclass().getDeclaredFields();
@@ -133,11 +133,16 @@ public final class ConfigurationUtils {
             if (properties.containsKey(f.getName())) {
                 try {
                     f.setAccessible(true);
-                    String v = (String) properties.get(f.getName());
-                    if (!StringUtils.isBlank(v)) {
-                        f.set(obj, value(v.trim(), f));
+                    Object o = properties.get(f.getName());
+                    if (o instanceof String) {
+                        String v = (String) o;
+                        if (!StringUtils.isBlank(v)) {
+                            f.set(obj, value(v.trim(), f));
+                        } else {
+                            setEmptyValue(v, f, obj);
+                        }
                     } else {
-                        setEmptyValue(v, f, obj);
+                        f.set(obj, o);
                     }
                 } catch (Exception e) {
                     throw new IllegalArgumentException(format("failed to initialize %s field while setting value %s",

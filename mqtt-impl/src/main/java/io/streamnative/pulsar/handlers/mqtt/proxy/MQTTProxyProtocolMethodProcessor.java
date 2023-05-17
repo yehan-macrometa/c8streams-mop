@@ -384,7 +384,7 @@ public class MQTTProxyProtocolMethodProcessor extends AbstractCommonProtocolMeth
                             List<CompletableFuture<Void>> writeFutures = pulsarTopicNames.stream()
                                     .map(encodedPulsarTopicName -> {
                                         String mqttTopicName = getMqttTopicName(topic,
-                                            encodedPulsarTopicName);
+                                            subscription.topicName());
                                         MqttSubscribeMessage subscribeMessage = MqttMessageBuilders.subscribe()
                                             .messageId(message.variableHeader().messageId())
                                             .addSubscription(subscription.qualityOfService(), mqttTopicName)
@@ -408,7 +408,7 @@ public class MQTTProxyProtocolMethodProcessor extends AbstractCommonProtocolMeth
         boolean isDefaultPulsarEncodedTopicName = PulsarTopicUtils.isDefaultDomainAndNs(
                 encodedPulsarTopicNameObj, proxyConfig.getDefaultTopicDomain(),
                 proxyConfig.getDefaultTenant(), proxyConfig.getDefaultNamespace());
-        if (isDefaultPulsarEncodedTopicName) {
+        if (isDefaultPulsarEncodedTopicName && !subscriptionTopicName.startsWith(proxyConfig.getMqttRealTopicNamePrefix())) {
             return MqttUtils.isRegexFilter(subscriptionTopicName)
                     ? Codec.decode(encodedPulsarTopicNameObj.getLocalName())
                     : subscriptionTopicName;

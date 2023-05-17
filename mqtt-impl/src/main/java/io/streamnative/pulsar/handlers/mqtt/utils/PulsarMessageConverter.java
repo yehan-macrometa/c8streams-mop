@@ -23,12 +23,14 @@ import io.netty.handler.codec.mqtt.MqttProperties;
 import io.netty.handler.codec.mqtt.MqttPublishMessage;
 import io.netty.handler.codec.mqtt.MqttQoS;
 import io.netty.util.concurrent.FastThreadLocal;
+import io.netty.util.internal.StringUtil;
 import io.streamnative.pulsar.handlers.mqtt.PacketIdGenerator;
 import io.streamnative.pulsar.handlers.mqtt.support.MessageBuilder;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Collections;
 import java.util.List;
 import lombok.extern.slf4j.Slf4j;
@@ -70,7 +72,7 @@ public class PulsarMessageConverter {
             };
 
     // Convert MQTT message to Pulsar message.
-    public static MessageImpl<byte[]> toPulsarMsg(Topic topic, MqttProperties properties, ByteBuffer payload) {
+    public static MessageImpl<byte[]> toPulsarMsg(String topicName, MqttProperties properties, ByteBuffer payload) {
         MessageMetadata metadata = LOCAL_MESSAGE_METADATA.get();
         metadata.clear();
         if (properties != null) {
@@ -103,6 +105,9 @@ public class PulsarMessageConverter {
                             .setValue(String.valueOf(System.currentTimeMillis() / 1000 + property.value()));
                 }
             });
+        }
+        if (!StringUtil.isNullOrEmpty(topicName)) {
+            metadata.addProperty().setKey("virtualTopic").setValue(topicName);
         }
         // Macrometa Corp Modification: compatible with pulsar 2.8.1.0
         // Old code:
@@ -206,6 +211,10 @@ public class PulsarMessageConverter {
         MessageImpl<byte[]> msg = (MessageImpl<byte[]>) message;
         MessageMetadata metadata = LOCAL_MESSAGE_METADATA.get();
         metadata.clear();
+        String virtualTopic = msg.getProperty("virtualTopic");
+        if (!StringUtil.isNullOrEmpty(virtualTopic)) {
+            metadata.addProperty().setKey("virtualTopic").setValue(msg.getProperty("virtualTopic"));
+        }
         ByteBuf payload = msg.getDataBuffer();
 
         // filled in required fields

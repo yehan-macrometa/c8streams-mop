@@ -19,6 +19,10 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.stream.Collectors;
+
+import io.streamnative.pulsar.handlers.mqtt.support.MQTTCommonConsumer;
+import io.streamnative.pulsar.handlers.mqtt.support.MQTTCommonConsumerGroup;
+import io.streamnative.pulsar.handlers.mqtt.support.MQTTVirtualConsumer;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.tuple.Pair;
 import org.apache.pulsar.broker.service.BrokerServiceException;
@@ -30,16 +34,17 @@ import org.apache.pulsar.common.util.FutureUtil;
 @Slf4j
 public class TopicSubscriptionManager {
 
-    private final Map<Topic, Pair<Subscription, Consumer>> topicSubscriptions = Maps.newConcurrentMap();
+    private final Map<String, Pair<MQTTCommonConsumerGroup, MQTTVirtualConsumer>> topicSubscriptions = Maps.newConcurrentMap();
 
-    public Pair<Subscription, Consumer> putIfAbsent(Topic topic, Subscription subscription, Consumer consumer) {
-        return topicSubscriptions.putIfAbsent(topic, Pair.of(subscription, consumer));
+    public Pair<MQTTCommonConsumerGroup, MQTTVirtualConsumer> putIfAbsent(String topic, MQTTCommonConsumerGroup consumerGroup,
+                                                               MQTTVirtualConsumer consumer) {
+        return topicSubscriptions.putIfAbsent(topic, Pair.of(consumerGroup, consumer));
     }
 
     public void removeSubscriptionConsumers() {
         topicSubscriptions.forEach((k, v) -> {
             try {
-                removeConsumerIfExist(v.getLeft(), v.getRight());
+                removeConsumerIfExist(k, v.getLeft(), v.getRight());
             } catch (BrokerServiceException ex) {
                 log.warn("subscription [{}] remove consumer {} error",
                         v.getLeft(), v.getRight(), ex);
@@ -47,25 +52,20 @@ public class TopicSubscriptionManager {
         });
     }
 
-    public CompletableFuture<Void> unsubscribe(Topic topic, boolean cleanSubscription) {
-        Pair<Subscription, Consumer> subscriptionConsumerPair = topicSubscriptions.get(topic);
+    public CompletableFuture<Void> unsubscribe(String topic, boolean cleanSubscription) {
+        Pair<MQTTCommonConsumerGroup, MQTTVirtualConsumer> subscriptionConsumerPair = topicSubscriptions.get(topic);
         if (subscriptionConsumerPair == null) {
             return FutureUtil.failedFuture(new MQTTNoSubscriptionExistedException(
                     String.format("Can not found subscription for topic %s when unSubscribe", topic)));
         }
-        String subscriberName = subscriptionConsumerPair.getLeft().getName();
         try {
-            removeConsumerIfExist(subscriptionConsumerPair.getLeft(), subscriptionConsumerPair.getValue());
+            removeConsumerIfExist(topic, subscriptionConsumerPair.getLeft(), subscriptionConsumerPair.getValue());
         } catch (BrokerServiceException e) {
-            log.error("[ Subscription ] Subscription {} Remove consumer fail.", subscriberName, e);
+            log.error("[ Subscription ] Subscription for topic {} Remove consumer fail.", topic, e);
             FutureUtil.failedFuture(e);
         }
-        if (cleanSubscription) {
-            return subscriptionConsumerPair.getLeft().deleteForcefully()
-                    .thenAccept(unused -> topicSubscriptions.remove(topic));
-        } else {
-            return CompletableFuture.completedFuture(null);
-        }
+        return CompletableFuture.completedFuture(null);
+        
     }
 
     public CompletableFuture<Void> removeSubscriptions() {
@@ -76,9 +76,7 @@ public class TopicSubscriptionManager {
         return FutureUtil.waitForAll(futures);
     }
 
-    private void removeConsumerIfExist(Subscription subscription, Consumer consumer) throws BrokerServiceException {
-        if (subscription.getConsumers().contains(consumer)) {
-            subscription.removeConsumer(consumer);
-        }
+    private void removeConsumerIfExist(String topic, MQTTCommonConsumerGroup consumerGroup, MQTTVirtualConsumer consumer) throws BrokerServiceException {
+        consumerGroup.remove(topic, consumer);
     }
 }

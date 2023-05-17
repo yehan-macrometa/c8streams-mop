@@ -403,6 +403,11 @@ public class MQTTCommonConfiguration extends ServiceConfiguration {
      */
     private Sharder sharder;
     
+    public void setSharder(Sharder sharder) {
+        this.sharder = sharder;
+        getProperties().put("sharder", sharder);
+    }
+    
     /**
      * Executor responsible for publishing messages
      */
