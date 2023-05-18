@@ -104,7 +104,12 @@ public class PulsarMessageConverter {
                 }
             });
         }
-        return MessageImpl.create(metadata, payload, SCHEMA, topic.getName());
+        // Macrometa Corp Modification: compatible with pulsar 2.8.1.0
+        // Old code:
+        // return MessageImpl.create(metadata, payload, SCHEMA, topic.getName());
+        // New code:
+        return MessageImpl.create(metadata, payload, SCHEMA);
+        // End.
     }
 
     private static String getPropertiesPrefix(int propertyId) {

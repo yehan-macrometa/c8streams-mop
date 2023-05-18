@@ -14,6 +14,8 @@
 package io.streamnative.pulsar.handlers.mqtt.utils;
 
 import static io.streamnative.pulsar.handlers.mqtt.utils.MqttUtils.isRegexFilter;
+
+import com.google.common.base.Joiner;
 import com.google.common.base.Splitter;
 import io.streamnative.pulsar.handlers.mqtt.TopicFilter;
 import io.streamnative.pulsar.handlers.mqtt.TopicFilterImpl;
@@ -56,7 +58,12 @@ public class PulsarTopicUtils {
                                                                        String defaultTopicDomain) {
         return getTopicName(topicName, defaultTenant, defaultNamespace, encodeTopicName, defaultTopicDomain)
                 .thenCompose(topic -> pulsarService.getPulsarResources().getNamespaceResources()
-                        .getPoliciesAsync(topic.getNamespaceObject())
+                    // Macrometa Corp Modification: compatible with pulsar 2.8.1.0
+                    // Old code:
+                    // .getPoliciesAsync(topic.getNamespaceObject())
+                    // New code:
+                        .getCache().get(joinPath(new String[]{"/admin/policies", topic.getNamespaceObject().toString()}))
+                    // End.
                         .thenApply(policies -> {
                             if (!policies.isPresent()) {
                                 return pulsarService.getConfig().isAllowAutoTopicCreation();
@@ -71,7 +78,13 @@ public class PulsarTopicUtils {
                         }).thenCompose(isAllowTopicCreation ->
                                 getTopicReference(pulsarService, topic, isAllowTopicCreation)));
     }
-
+    
+    public static String joinPath(String... parts) {
+        StringBuilder sb = new StringBuilder();
+        Joiner.on('/').appendTo(sb, parts);
+        return sb.toString();
+    }
+    
     public static CompletableFuture<Optional<Topic>> getTopicReference(PulsarService pulsarService, String topicName,
                                                                        String defaultTenant, String defaultNamespace,
                                                                        boolean encodeTopicName,

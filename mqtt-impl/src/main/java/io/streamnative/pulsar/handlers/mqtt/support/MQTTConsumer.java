@@ -70,9 +70,16 @@ public class MQTTConsumer extends Consumer {
     public MQTTConsumer(Subscription subscription, String mqttTopicName, String pulsarTopicName, Connection connection,
                         MQTTServerCnx cnx, MqttQoS qos, PacketIdGenerator packetIdGenerator,
                         OutstandingPacketContainer outstandingPacketContainer, MQTTMetricsCollector metricsCollector) {
+        // Macrometa Corp Modification: compatible with pulsar 2.8.1.0
+        // Old code:
+        // super(subscription, CommandSubscribe.SubType.Shared, pulsarTopicName, 0, 0,
+        //      connection.getClientId(), true, cnx, "", null, false,
+        //      CommandSubscribe.InitialPosition.Latest, null, MessageId.latest, Commands.DEFAULT_CONSUMER_EPOCH);
+        // New code:
         super(subscription, CommandSubscribe.SubType.Shared, pulsarTopicName, 0, 0,
-                connection.getClientId(), true, cnx, "", null, false,
-                CommandSubscribe.InitialPosition.Latest, null, MessageId.latest, Commands.DEFAULT_CONSUMER_EPOCH);
+                connection.getClientId(), 0, cnx, "", null, false,
+                CommandSubscribe.InitialPosition.Latest, null, MessageId.latest);
+        // End.
         this.pulsarTopicName = pulsarTopicName;
         this.mqttTopicName = mqttTopicName;
         this.cnx = cnx;

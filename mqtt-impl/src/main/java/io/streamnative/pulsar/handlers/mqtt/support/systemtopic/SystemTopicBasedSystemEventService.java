@@ -14,6 +14,8 @@
 package io.streamnative.pulsar.handlers.mqtt.support.systemtopic;
 
 import static io.streamnative.pulsar.handlers.mqtt.support.systemtopic.MqttEventUtils.getMqttEvent;
+import static io.streamnative.pulsar.handlers.mqtt.utils.PulsarTopicUtils.joinPath;
+
 import com.google.common.annotations.Beta;
 import java.util.ArrayList;
 import java.util.List;
@@ -21,10 +23,13 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
+
+import com.google.common.base.Joiner;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.bookkeeper.common.util.JsonUtil;
 import org.apache.pulsar.broker.PulsarServerException;
 import org.apache.pulsar.broker.PulsarService;
+import org.apache.pulsar.broker.resources.NamespaceResources;
 import org.apache.pulsar.broker.systopic.SystemTopicClient;
 import org.apache.pulsar.client.api.Message;
 import org.apache.pulsar.client.api.MessageId;
@@ -134,16 +139,38 @@ public class SystemTopicBasedSystemEventService implements SystemEventService {
         Backoff backoff = new Backoff(1, TimeUnit.SECONDS,
                 3, TimeUnit.SECONDS,
                 10, TimeUnit.SECONDS);
-        RetryUtil.retryAsynchronously(systemTopicClient::newReaderAsync, backoff, pulsarService.getExecutor(), result);
+        // Macrometa Corp Modification: compatible with pulsar 2.8.1.0
+        // Old code:
+        // RetryUtil.retryAsynchronously(systemTopicClient::newReaderAsync, backoff, pulsarService.getExecutor(), result);
+        // New code:
+        RetryUtil.retryAsynchronously(() -> {
+            try {
+                return systemTopicClient.newReader();
+            } catch (PulsarClientException e) {
+                log.error("[{}] Create reader error.", SYSTEM_EVENT_TOPIC, e);
+            }
+            return null;
+        }, backoff, pulsarService.getExecutor(), result);
+        // End.
         return result;
     }
 
     @Override
     public void start() {
-        CompletableFuture<Boolean> checkNamespaceFuture = pulsarService
+        // Macrometa Corp Modification: compatible with pulsar 2.8.1.0
+        // Old code:
+        // CompletableFuture<Boolean> checkNamespaceFuture = pulsarService
+        //                .getPulsarResources()
+        //                .getNamespaceResources()
+        //                .namespaceExistsAsync(NamespaceName.SYSTEM_NAMESPACE);
+        // New code:
+        NamespaceResources namespaceResources = pulsarService
                 .getPulsarResources()
-                .getNamespaceResources()
-                .namespaceExistsAsync(NamespaceName.SYSTEM_NAMESPACE);
+                .getNamespaceResources();
+        CompletableFuture<Boolean> checkNamespaceFuture =
+            namespaceExistsAsync(namespaceResources, NamespaceName.SYSTEM_NAMESPACE);
+        // End.
+         
         checkNamespaceFuture.thenAccept(ret -> {
             if (ret) {
                 startReader();
@@ -156,6 +183,13 @@ public class SystemTopicBasedSystemEventService implements SystemEventService {
             log.error("check system namespace : {} error", NamespaceName.SYSTEM_NAMESPACE, ex);
             return null;
         });
+    }
+    
+    public CompletableFuture<Boolean> namespaceExistsAsync(NamespaceResources namespaceResources, NamespaceName ns) {
+        String path = joinPath(new String[]{"/admin/policies", ns.toString()});
+        return namespaceResources.getCache().exists(path).thenCompose((exists) ->
+            !exists ? CompletableFuture.completedFuture(false) : namespaceResources.getCache()
+                .getChildren(path).thenApply(List::isEmpty));
     }
 
     @Override
