@@ -156,8 +156,12 @@ public class PulsarTopicUtils {
                 Topic topic = topicOp.get();
                 Subscription subscription = topic.getSubscription(subscriptionName);
                 if (subscription == null) {
-                    topic.createSubscription(subscriptionName, position, false,
-                                    Collections.emptyMap())
+                    // Macrometa Corp Modification: compatible with pulsar 2.8.1.0
+                    // Old code:
+                    // topic.createSubscription(subscriptionName, position, false, Collections.emptyMap())
+                    // New code:
+                    topic.createSubscription(subscriptionName, position, false)
+                    // End.
                             .thenAccept(sub -> {
                                 if (topic instanceof NonPersistentTopic) {
                                     ((NonPersistentTopic) topic).getSubscriptions().put(subscriptionName,

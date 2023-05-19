@@ -79,7 +79,8 @@ public class MQTTProxyChannelInitializer extends ChannelInitializer<SocketChanne
                     sslProvider = SslProvider.valueOf(proxyConfig.getTlsProvider());
                 }
                 serverSslCtxRefresher = new NettyServerSslContextBuilder(
-                        sslProvider,
+                        // Macrometa Corp Modification: compatible with pulsar 2.8.1.0
+                        /*sslProvider,*/
                         proxyConfig.isMqttTlsAllowInsecureConnection(),
                         proxyConfig.getMqttTlsTrustCertsFilePath(),
                         proxyConfig.getMqttTlsCertificateFilePath(),
