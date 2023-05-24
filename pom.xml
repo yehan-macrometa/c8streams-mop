@@ -66,7 +66,7 @@
   </properties>
   <dependencies>
     <dependency>
-      <groupId>io.streamnative</groupId>
+      <groupId>org.apache.pulsar</groupId>
       <artifactId>pulsar-broker</artifactId>
       <version>${pulsar.version}</version>
       <scope>provided</scope>
@@ -92,7 +92,7 @@
     <!-- Macrometa Corp Modification: compatible with pulsar 2.8.1.0
         Added pulsar-metadata dependency -->
     <dependency>
-      <groupId>io.streamnative</groupId>
+      <groupId>org.apache.pulsar</groupId>
       <artifactId>pulsar-metadata</artifactId>
       <version>${pulsar.version}</version>
       <scope>provided</scope>
