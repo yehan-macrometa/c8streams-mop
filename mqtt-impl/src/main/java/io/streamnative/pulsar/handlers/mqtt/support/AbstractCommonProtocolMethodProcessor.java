@@ -302,13 +302,17 @@ public abstract class AbstractCommonProtocolMethodProcessor implements ProtocolM
             });
             log.info("C8DBCluster connected.");
 
-            Object timeouts = c8db.db(MM_TENANT, SYSTEM_FABRIC).query(
-                    "FOR doc in @@collection FILTER doc._key=='streamsMqttKeepAliveTimeoutSeconds' RETURN doc",
-                    ImmutableMap.of("@collection", KMS_COLLECTION_NAME),
-                    Object.class).first();
+            try {
+                Object timeouts = c8db.db(MM_TENANT, SYSTEM_FABRIC).query(
+                        "FOR doc in @@collection FILTER doc._key=='streamsMqttKeepAliveTimeoutSeconds' RETURN doc",
+                        ImmutableMap.of("@collection", KMS_COLLECTION_NAME),
+                        Object.class).first();
 
-            if (timeouts != null) {
-                configCache.putAll((Map<? extends String, ? extends KeepAliveTimeoutConfig>) timeouts);
+                if (timeouts != null) {
+                    configCache.putAll((Map<? extends String, ? extends KeepAliveTimeoutConfig>) timeouts);
+                }
+            } catch (Exception e) {
+                log.error("Could not initialize TimeoutConfigCache.", e);
             }
         }
         public KeepAliveTimeoutConfig getDefault() {
@@ -331,10 +335,14 @@ public abstract class AbstractCommonProtocolMethodProcessor implements ProtocolM
             });
             log.info("C8DBCluster connected.");
 
-            validationKeyInfo.addAll(c8db.db(MM_TENANT, SYSTEM_FABRIC).query(
-                    "FOR doc in @@collection FILTER doc.enabled==true AND doc.service=='CUSTOMER_JWT' RETURN doc.dataKey",
-                    ImmutableMap.of("@collection", KMS_COLLECTION_NAME),
-                    ValidationKeyInfo.class).asListRemaining());
+            try {
+                validationKeyInfo.addAll(c8db.db(MM_TENANT, SYSTEM_FABRIC).query(
+                        "FOR doc in @@collection FILTER doc.enabled==true AND doc.service=='CUSTOMER_JWT' RETURN doc.dataKey",
+                        ImmutableMap.of("@collection", KMS_COLLECTION_NAME),
+                        ValidationKeyInfo.class).asListRemaining());
+            } catch (Exception e) {
+                log.error("Could not initialize ValidationKeyCache.", e);
+            }
         }
         public String getTenantForJwt(String jwt) {
             ValidationKeyInfo keyInfo = null;
