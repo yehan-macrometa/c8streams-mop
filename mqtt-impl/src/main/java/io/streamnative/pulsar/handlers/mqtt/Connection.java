@@ -119,7 +119,7 @@ public class Connection {
                 pipeline.remove("idleStateHandler");
             }
             pipeline.addFirst("idleStateHandler", new IdleStateHandler(0, 0,
-                    Math.round(clientRestrictions.getKeepAliveTime() * 1.5f)));
+                    clientRestrictions.getKeepAliveTime()));
         }
     }
 

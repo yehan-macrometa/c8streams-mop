@@ -13,6 +13,10 @@
  */
 package io.streamnative.pulsar.handlers.mqtt.support;
 
+import co.macrometa.c8streams.api.util.C8Retriever;
+import com.c8db.C8DB;
+import com.google.common.collect.ImmutableMap;
+import io.jsonwebtoken.Jwts;
 import io.netty.channel.Channel;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.handler.codec.mqtt.MqttConnectMessage;
@@ -22,6 +26,7 @@ import io.netty.handler.codec.mqtt.MqttMessage;
 import io.netty.handler.codec.mqtt.MqttMessageBuilders;
 import io.netty.handler.codec.mqtt.MqttProperties;
 import io.netty.handler.codec.mqtt.MqttReasonCodeAndPropertiesVariableHeader;
+import io.netty.util.CharsetUtil;
 import io.streamnative.pulsar.handlers.mqtt.MQTTAuthenticationService;
 import io.streamnative.pulsar.handlers.mqtt.ProtocolMethodProcessor;
 import io.streamnative.pulsar.handlers.mqtt.adapter.MqttAdapterMessage;
@@ -33,16 +38,39 @@ import io.streamnative.pulsar.handlers.mqtt.restrictions.ClientRestrictions;
 import io.streamnative.pulsar.handlers.mqtt.utils.MqttMessageUtils;
 import io.streamnative.pulsar.handlers.mqtt.utils.MqttUtils;
 import io.streamnative.pulsar.handlers.mqtt.utils.NettyUtils;
+import lombok.AllArgsConstructor;
+import lombok.Data;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.pulsar.broker.authentication.AuthenticationDataCommand;
+import org.apache.pulsar.broker.c8db.C8DBCluster;
+
+import java.util.HashMap;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CopyOnWriteArrayList;
 
 /**
  * Common protocol method processor.
  */
 @Slf4j
 public abstract class AbstractCommonProtocolMethodProcessor implements ProtocolMethodProcessor {
+    private static final String MM_TENANT = "_mm";
+    private static final String SYSTEM_FABRIC = "_system";
+    private static final String KMS_COLLECTION_NAME = "_kmsKeys";
+    private static final ValidationKeyCache validationKeyCache;
+    private final static TimeoutConfigCache timeoutConfigCache;
+
+
+    static {
+        try {
+            validationKeyCache = new ValidationKeyCache();
+            timeoutConfigCache = new TimeoutConfigCache();
+        } catch (Exception e) {
+            throw new RuntimeException(e);
+        }
+    }
 
     protected final ChannelHandlerContext ctx;
     @Getter
@@ -147,7 +175,7 @@ public abstract class AbstractCommonProtocolMethodProcessor implements ProtocolM
             ClientRestrictions.ClientRestrictionsBuilder clientRestrictionsBuilder = ClientRestrictions.builder();
             MqttPropertyUtils.parsePropertiesToStuffRestriction(clientRestrictionsBuilder, msg);
             clientRestrictionsBuilder
-                    .keepAliveTime(variableHeader.keepAliveTimeSeconds())
+                    .keepAliveTime(getKeepAliveTimeout(variableHeader, payload))
                     .cleanSession(variableHeader.isCleanSession());
             adapter.setMqttMessage(connectMessage);
             doProcessConnect(adapter, userRole, clientRestrictionsBuilder.build());
@@ -160,6 +188,28 @@ public abstract class AbstractCommonProtocolMethodProcessor implements ProtocolM
                 channel.close();
             }
         }
+    }
+
+    private int getKeepAliveTimeout(MqttConnectVariableHeader variableHeader, MqttConnectPayload payload) {
+        byte[] passwordBytes = payload.passwordInBytes();
+        String tenant = null;
+
+        if (passwordBytes != null) {
+            tenant = extractTenant(new String(passwordBytes, CharsetUtil.UTF_8));
+        }
+
+        KeepAliveTimeoutConfig config = tenant != null ? timeoutConfigCache.get(tenant) : timeoutConfigCache.getDefault();
+        return calculateKeepAliveTimeout(config, variableHeader.keepAliveTimeSeconds());
+    }
+
+    private static String extractTenant(String jwt) {
+        return validationKeyCache.getTenantForJwt(jwt);
+    }
+
+    private static int calculateKeepAliveTimeout(KeepAliveTimeoutConfig config, int clientRequestedTimeout) {
+        int timeoutSeconds = config.getTimeoutSeconds();
+        int timeoutByRatio = Math.round(clientRequestedTimeout * config.getTimeoutRatio());
+        return Math.max(timeoutSeconds, timeoutByRatio);
     }
 
     @Override
@@ -226,6 +276,98 @@ public abstract class AbstractCommonProtocolMethodProcessor implements ProtocolM
                     log.warn("send auth result failed", future.cause());
                 }
             });
+        }
+    }
+
+    @Data
+    @AllArgsConstructor
+    private static class KeepAliveTimeoutConfig {
+        private int timeoutSeconds;
+        private float timeoutRatio;
+    }
+
+    private static class TimeoutConfigCache {
+        private static final int DEFAULT_TIMEOUT_SECONDS = 90;
+        private static final float DEFAULT_TIMEOUT_RATIO = 1.5f;
+        private static final KeepAliveTimeoutConfig DEFAULT_CONFIG =
+                new KeepAliveTimeoutConfig(DEFAULT_TIMEOUT_SECONDS, DEFAULT_TIMEOUT_RATIO);
+
+        private final ConcurrentHashMap<String, KeepAliveTimeoutConfig> configCache = new ConcurrentHashMap<>();
+        private final C8DB c8db;
+
+        public TimeoutConfigCache() throws Exception {
+            c8db = C8Retriever.any(() -> {
+                C8DBCluster cluster = new C8DBCluster();
+                return cluster.getC8DB();
+            });
+            log.info("C8DBCluster connected.");
+
+            C8Retriever.any(() -> {
+                Object timeouts = c8db.db(MM_TENANT, SYSTEM_FABRIC).query(
+                        "FOR doc in @@collection FILTER doc._key=='streamsMqttKeepAliveTimeoutSeconds' RETURN doc",
+                        ImmutableMap.of("@collection", KMS_COLLECTION_NAME),
+                        Object.class).first();
+
+                if (timeouts != null) {
+                    configCache.putAll((Map<? extends String, ? extends KeepAliveTimeoutConfig>) timeouts);
+                }
+                return null;
+            });
+        }
+        public KeepAliveTimeoutConfig getDefault() {
+            return DEFAULT_CONFIG;
+        }
+
+        public KeepAliveTimeoutConfig get(String tenant) {
+            return configCache.getOrDefault(tenant, getDefault());
+        }
+    }
+
+    private static class ValidationKeyCache {
+        private final CopyOnWriteArrayList<ValidationKeyInfo> validationKeyInfo = new CopyOnWriteArrayList<>();
+        private final C8DB c8db;
+
+        public ValidationKeyCache() throws Exception {
+            c8db = C8Retriever.any(() -> {
+                C8DBCluster cluster = new C8DBCluster();
+                return cluster.getC8DB();
+            });
+            log.info("C8DBCluster connected.");
+
+            C8Retriever.any(() -> {
+                validationKeyInfo.addAll(c8db.db(MM_TENANT, SYSTEM_FABRIC).query(
+                        "FOR doc in @@collection FILTER doc.enabled==true AND doc.service=='CUSTOMER_JWT' RETURN doc.dataKey",
+                        ImmutableMap.of("@collection", KMS_COLLECTION_NAME),
+                        ValidationKeyInfo.class).asListRemaining());
+                return null;
+            });
+        }
+        public String getTenantForJwt(String jwt) {
+            ValidationKeyInfo keyInfo = null;
+            for (ValidationKeyInfo info : validationKeyInfo) {
+                String dataKey = info.dataKey;
+                if (dataKey != null) {
+                    try {
+                        Jwts.parserBuilder().setSigningKey(dataKey).build().parse(jwt);
+                        keyInfo = info;
+                        break;
+                    } catch (Exception e) {
+                        // Ignore
+                    }
+                }
+            }
+
+            if (keyInfo != null) {
+                return keyInfo.tenant;
+            } else {
+                return null;
+            }
+        }
+
+        @Data
+        public static class ValidationKeyInfo {
+            private String tenant;
+            private String dataKey;
         }
     }
 }
