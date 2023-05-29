@@ -302,17 +302,14 @@ public abstract class AbstractCommonProtocolMethodProcessor implements ProtocolM
             });
             log.info("C8DBCluster connected.");
 
-            C8Retriever.any(() -> {
-                Object timeouts = c8db.db(MM_TENANT, SYSTEM_FABRIC).query(
-                        "FOR doc in @@collection FILTER doc._key=='streamsMqttKeepAliveTimeoutSeconds' RETURN doc",
-                        ImmutableMap.of("@collection", KMS_COLLECTION_NAME),
-                        Object.class).first();
+            Object timeouts = c8db.db(MM_TENANT, SYSTEM_FABRIC).query(
+                    "FOR doc in @@collection FILTER doc._key=='streamsMqttKeepAliveTimeoutSeconds' RETURN doc",
+                    ImmutableMap.of("@collection", KMS_COLLECTION_NAME),
+                    Object.class).first();
 
-                if (timeouts != null) {
-                    configCache.putAll((Map<? extends String, ? extends KeepAliveTimeoutConfig>) timeouts);
-                }
-                return null;
-            });
+            if (timeouts != null) {
+                configCache.putAll((Map<? extends String, ? extends KeepAliveTimeoutConfig>) timeouts);
+            }
         }
         public KeepAliveTimeoutConfig getDefault() {
             return DEFAULT_CONFIG;
@@ -334,13 +331,10 @@ public abstract class AbstractCommonProtocolMethodProcessor implements ProtocolM
             });
             log.info("C8DBCluster connected.");
 
-            C8Retriever.any(() -> {
-                validationKeyInfo.addAll(c8db.db(MM_TENANT, SYSTEM_FABRIC).query(
-                        "FOR doc in @@collection FILTER doc.enabled==true AND doc.service=='CUSTOMER_JWT' RETURN doc.dataKey",
-                        ImmutableMap.of("@collection", KMS_COLLECTION_NAME),
-                        ValidationKeyInfo.class).asListRemaining());
-                return null;
-            });
+            validationKeyInfo.addAll(c8db.db(MM_TENANT, SYSTEM_FABRIC).query(
+                    "FOR doc in @@collection FILTER doc.enabled==true AND doc.service=='CUSTOMER_JWT' RETURN doc.dataKey",
+                    ImmutableMap.of("@collection", KMS_COLLECTION_NAME),
+                    ValidationKeyInfo.class).asListRemaining());
         }
         public String getTenantForJwt(String jwt) {
             ValidationKeyInfo keyInfo = null;
