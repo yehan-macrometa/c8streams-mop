@@ -61,6 +61,7 @@ public abstract class AbstractCommonProtocolMethodProcessor implements ProtocolM
     private static final String MM_TENANT = "_mm";
     private static final String SYSTEM_FABRIC = "_system";
     private static final String KMS_COLLECTION_NAME = "_kmsKeys";
+    private static final String C8FEDERATION_COLLECTION_NAME = "_c8federation";
     private static final ValidationKeyCache validationKeyCache;
     private final static TimeoutConfigCache timeoutConfigCache;
 
@@ -328,8 +329,8 @@ public abstract class AbstractCommonProtocolMethodProcessor implements ProtocolM
 
             try {
                 Object timeouts = c8db.db(MM_TENANT, SYSTEM_FABRIC).query(
-                        "FOR doc in @@collection FILTER doc._key=='streamsMqttKeepAliveTimeoutSeconds' RETURN doc",
-                        ImmutableMap.of("@collection", KMS_COLLECTION_NAME),
+                        "FOR doc in @@collection FILTER doc._key=='streamsMqttKeepAliveTimeout' RETURN doc",
+                        ImmutableMap.of("@collection", C8FEDERATION_COLLECTION_NAME),
                         Object.class).first();
 
                 if (timeouts != null) {
