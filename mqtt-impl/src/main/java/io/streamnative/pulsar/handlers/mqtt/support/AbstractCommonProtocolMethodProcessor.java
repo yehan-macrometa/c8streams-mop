@@ -46,9 +46,9 @@ import org.apache.avro.data.Json;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.pulsar.broker.authentication.AuthenticationDataCommand;
 import org.apache.pulsar.broker.c8db.C8DBCluster;
+import org.apache.pulsar.broker.c8streams.CollectionChangeListener;
 
 import java.util.Base64;
-import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
@@ -321,12 +321,27 @@ public abstract class AbstractCommonProtocolMethodProcessor implements ProtocolM
         private final C8DB c8db;
 
         public TimeoutConfigCache() throws Exception {
+            C8Retriever.any(() -> {
+                new CollectionChangeListener()
+                        .listen("_mm", "_system", "_c8federation", (reader, msg) -> loadConfig());
+                return null;
+            });
+
             c8db = C8Retriever.any(() -> {
                 C8DBCluster cluster = new C8DBCluster();
                 cluster.init();
                 return cluster.getC8DB();
             });
             log.info("C8DBCluster connected.");
+
+            loadConfig();
+        }
+
+        private void loadConfig() {
+            if (c8db == null) {
+                log.warn("Cannot load config. C8DB is not initialized.");
+                return;
+            }
 
             try {
                 Object doc = c8db.db(MM_TENANT, SYSTEM_FABRIC).query(
@@ -360,9 +375,10 @@ public abstract class AbstractCommonProtocolMethodProcessor implements ProtocolM
                     }
                 }
             } catch (Exception e) {
-                log.error("Could not initialize TimeoutConfigCache.", e);
+                log.error("Could not load config.", e);
             }
         }
+
         public KeepAliveTimeoutConfig getDefault() {
             return DEFAULT_CONFIG;
         }
@@ -377,6 +393,12 @@ public abstract class AbstractCommonProtocolMethodProcessor implements ProtocolM
         private final C8DB c8db;
 
         public ValidationKeyCache() throws Exception {
+            C8Retriever.any(() -> {
+                new CollectionChangeListener()
+                        .listen("_mm", "_system", "_kmsKeys", (reader, msg) -> loadConfig());
+                return null;
+            });
+
             c8db = C8Retriever.any(() -> {
                 C8DBCluster cluster = new C8DBCluster();
                 cluster.init();
@@ -384,15 +406,25 @@ public abstract class AbstractCommonProtocolMethodProcessor implements ProtocolM
             });
             log.info("C8DBCluster connected.");
 
+            loadConfig();
+        }
+
+        private void loadConfig() {
+            if (c8db == null) {
+                log.warn("Cannot load config. C8DB is not initialized.");
+                return;
+            }
+
             try {
                 validationKeyInfo.addAll(c8db.db(MM_TENANT, SYSTEM_FABRIC).query(
                         "FOR doc in @@collection FILTER doc.enabled==true AND doc.service=='CUSTOMER_JWT' RETURN doc.dataKey",
                         ImmutableMap.of("@collection", KMS_COLLECTION_NAME),
                         ValidationKeyInfo.class).asListRemaining());
             } catch (Exception e) {
-                log.error("Could not initialize ValidationKeyCache.", e);
+                log.error("Could not load config.", e);
             }
         }
+
         public String getTenantForJwt(String jwt) {
             ValidationKeyInfo keyInfo = null;
             for (ValidationKeyInfo info : validationKeyInfo) {
