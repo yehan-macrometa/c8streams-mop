@@ -329,13 +329,33 @@ public abstract class AbstractCommonProtocolMethodProcessor implements ProtocolM
             log.info("C8DBCluster connected.");
 
             try {
-                Object timeouts = c8db.db(MM_TENANT, SYSTEM_FABRIC).query(
+                Object doc = c8db.db(MM_TENANT, SYSTEM_FABRIC).query(
                         "FOR doc in @@collection FILTER doc._key=='streamsMqttKeepAliveTimeout' RETURN doc",
                         ImmutableMap.of("@collection", C8FEDERATION_COLLECTION_NAME),
                         Object.class).first();
 
-                if (timeouts != null) {
-                    configCache.putAll((Map<? extends String, ? extends KeepAliveTimeoutConfig>) timeouts);
+                if (doc != null) {
+                    log.debug("Got timeout configs from DB. {}", doc);
+
+                    Map<? extends String, ? extends KeepAliveTimeoutConfig> timeouts =
+                            (Map<? extends String, ? extends KeepAliveTimeoutConfig>) doc;
+
+                    for (String tenant : timeouts.keySet()) {
+                        log.debug("Loading timeout config for {}.", tenant);
+
+                        try {
+                            Map<String, Object> configMap = (Map<String, Object>) timeouts.get(tenant);
+                            int timeoutSeconds = (int) configMap.get("timeoutSeconds");
+                            float timeoutRatio = (float) configMap.get("timeoutRatio");
+                            KeepAliveTimeoutConfig config = new KeepAliveTimeoutConfig(timeoutSeconds, timeoutRatio);
+
+                            log.debug("configMap={}, KeepAliveTimeoutConfig={}", configMap, config);
+
+                            configCache.put(tenant, config);
+                        } catch (Exception e) {
+                            log.warn("Could not decode timeout config for {}. {}", tenant, e.getMessage());
+                        }
+                    }
                 }
             } catch (Exception e) {
                 log.error("Could not initialize TimeoutConfigCache.", e);
