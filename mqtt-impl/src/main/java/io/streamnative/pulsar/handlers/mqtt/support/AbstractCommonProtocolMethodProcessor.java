@@ -323,6 +323,7 @@ public abstract class AbstractCommonProtocolMethodProcessor implements ProtocolM
         public TimeoutConfigCache() throws Exception {
             c8db = C8Retriever.any(() -> {
                 C8DBCluster cluster = new C8DBCluster();
+                cluster.init();
                 return cluster.getC8DB();
             });
             log.info("C8DBCluster connected.");
@@ -356,6 +357,7 @@ public abstract class AbstractCommonProtocolMethodProcessor implements ProtocolM
         public ValidationKeyCache() throws Exception {
             c8db = C8Retriever.any(() -> {
                 C8DBCluster cluster = new C8DBCluster();
+                cluster.init();
                 return cluster.getC8DB();
             });
             log.info("C8DBCluster connected.");
