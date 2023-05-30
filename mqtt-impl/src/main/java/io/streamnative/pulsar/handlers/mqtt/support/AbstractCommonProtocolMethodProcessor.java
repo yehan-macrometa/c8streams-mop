@@ -42,10 +42,12 @@ import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.avro.data.Json;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.pulsar.broker.authentication.AuthenticationDataCommand;
 import org.apache.pulsar.broker.c8db.C8DBCluster;
 
+import java.util.Base64;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
@@ -68,6 +70,7 @@ public abstract class AbstractCommonProtocolMethodProcessor implements ProtocolM
             validationKeyCache = new ValidationKeyCache();
             timeoutConfigCache = new TimeoutConfigCache();
         } catch (Exception e) {
+            log.error("Could not initialize TimeoutConfigCache.", e);
             throw new RuntimeException(e);
         }
     }
@@ -198,12 +201,33 @@ public abstract class AbstractCommonProtocolMethodProcessor implements ProtocolM
             tenant = extractTenant(new String(passwordBytes, CharsetUtil.UTF_8));
         }
 
-        KeepAliveTimeoutConfig config = tenant != null ? timeoutConfigCache.get(tenant) : timeoutConfigCache.getDefault();
+        KeepAliveTimeoutConfig config = !StringUtils.isBlank(tenant) ?
+                timeoutConfigCache.get(tenant) : timeoutConfigCache.getDefault();
         return calculateKeepAliveTimeout(config, variableHeader.keepAliveTimeSeconds());
     }
 
-    private static String extractTenant(String jwt) {
-        return validationKeyCache.getTenantForJwt(jwt);
+    private static String extractTenant(String token) {
+        String[] chunks = token.split("\\.");
+
+        if (chunks.length != 3) {
+            return null;
+        }
+
+        Base64.Decoder decoder = Base64.getUrlDecoder();
+        Map<String, Object> header = (Map<String, Object>) Json.parseJson(new String(decoder.decode(chunks[0])));
+        Map<String, Object> payload = (Map<String, Object>) Json.parseJson(new String(decoder.decode(chunks[1])));
+
+        String tenant = (String) header.get("tenant");
+
+        if (StringUtils.isBlank(tenant)) {
+            tenant = (String) payload.get("tenant");
+        }
+
+        if (StringUtils.isBlank(tenant)) {
+            tenant = validationKeyCache.getTenantForJwt(token);
+        }
+
+        return tenant;
     }
 
     private static int calculateKeepAliveTimeout(KeepAliveTimeoutConfig config, int clientRequestedTimeout) {
