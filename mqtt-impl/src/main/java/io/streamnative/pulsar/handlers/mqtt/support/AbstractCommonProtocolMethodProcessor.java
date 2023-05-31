@@ -226,7 +226,12 @@ public abstract class AbstractCommonProtocolMethodProcessor implements ProtocolM
         }
 
         if (StringUtils.isBlank(tenant)) {
-            tenant = validationKeyCache.getTenantForJwt(token);
+            String kid = (String) header.get("kid");
+            if (StringUtils.isBlank(kid)) {
+                tenant = validationKeyCache.getTenantForJwt(token);
+            } else {
+                tenant = validationKeyCache.getTenantForKid(kid);
+            }
         }
 
         return tenant;
@@ -428,7 +433,8 @@ public abstract class AbstractCommonProtocolMethodProcessor implements ProtocolM
                         Map<String, Object> km = (Map<String, Object>) ko;
                         String tenant = (String) km.get("tenent");
                         String dataKey = (String) km.get("dataKey");
-                        ValidationKeyInfo info = new ValidationKeyInfo(tenant, dataKey);
+                        String kid = (String) km.get("kid");
+                        ValidationKeyInfo info = new ValidationKeyInfo(tenant, dataKey, kid);
 
                         log.debug("ValidationKeyInfo={}", info);
 
@@ -464,11 +470,22 @@ public abstract class AbstractCommonProtocolMethodProcessor implements ProtocolM
             }
         }
 
+        public String getTenantForKid(String kid) {
+            for (ValidationKeyInfo info : validationKeyInfo) {
+                if (kid.equals(info.kid)) {
+                    return info.tenant;
+                }
+            }
+
+            return null;
+        }
+
         @Data
         @AllArgsConstructor
         public static class ValidationKeyInfo {
             private String tenant;
             private String dataKey;
+            private String kid;
         }
     }
 }
