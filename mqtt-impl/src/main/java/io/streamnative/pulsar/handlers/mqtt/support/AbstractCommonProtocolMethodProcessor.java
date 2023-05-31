@@ -66,7 +66,7 @@ import java.util.concurrent.CopyOnWriteArrayList;
 public abstract class AbstractCommonProtocolMethodProcessor implements ProtocolMethodProcessor {
     private static final String MM_TENANT = "_mm";
     private static final String SYSTEM_FABRIC = "_system";
-    private static final String KMS_COLLECTION_NAME = "kmsKeys";
+    private static final String KMS_COLLECTION_NAME = "_kmsKeys";
     private static final String C8FEDERATION_COLLECTION_NAME = "_c8federation";
     private static final ValidationKeyCache validationKeyCache;
     private final static TimeoutConfigCache timeoutConfigCache;
@@ -75,6 +75,12 @@ public abstract class AbstractCommonProtocolMethodProcessor implements ProtocolM
     static {
         try {
             validationKeyCache = new ValidationKeyCache();
+        } catch (Exception e) {
+            log.error("Could not initialize ValidationKeyCache.", e);
+            throw new RuntimeException(e);
+        }
+
+        try {
             timeoutConfigCache = new TimeoutConfigCache();
         } catch (Exception e) {
             log.error("Could not initialize TimeoutConfigCache.", e);
