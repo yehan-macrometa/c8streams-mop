@@ -30,6 +30,11 @@ public final class Constants {
 
     public static final String MQTT_PROPERTIES_PREFIX = "MQTT_PROPERTIES_";
 
+    public static final String MM_TENANT = "_mm";
+    public static final String SYSTEM_FABRIC = "_system";
+    public static final String KMS_COLLECTION_NAME = "_kmsKeys";
+    public static final String C8FEDERATION_COLLECTION_NAME = "_c8federation";
+
     private Constants() {
     }
 }

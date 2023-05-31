@@ -41,6 +41,8 @@ import io.streamnative.pulsar.handlers.mqtt.restrictions.ClientRestrictions;
 import io.streamnative.pulsar.handlers.mqtt.utils.MqttMessageUtils;
 import io.streamnative.pulsar.handlers.mqtt.utils.MqttUtils;
 import io.streamnative.pulsar.handlers.mqtt.utils.NettyUtils;
+import io.streamnative.pulsar.handlers.mqtt.utils.TimeoutConfigCache;
+import io.streamnative.pulsar.handlers.mqtt.utils.ValidationKeyCache;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.Getter;
@@ -64,10 +66,6 @@ import java.util.concurrent.CopyOnWriteArrayList;
  */
 @Slf4j
 public abstract class AbstractCommonProtocolMethodProcessor implements ProtocolMethodProcessor {
-    private static final String MM_TENANT = "_mm";
-    private static final String SYSTEM_FABRIC = "_system";
-    private static final String KMS_COLLECTION_NAME = "_kmsKeys";
-    private static final String C8FEDERATION_COLLECTION_NAME = "_c8federation";
     private static final ValidationKeyCache validationKeyCache;
     private final static TimeoutConfigCache timeoutConfigCache;
 
@@ -214,7 +212,7 @@ public abstract class AbstractCommonProtocolMethodProcessor implements ProtocolM
             tenant = extractTenant(new String(passwordBytes, CharsetUtil.UTF_8));
         }
 
-        KeepAliveTimeoutConfig config = !StringUtils.isBlank(tenant) ?
+        TimeoutConfigCache.KeepAliveTimeoutConfig config = !StringUtils.isBlank(tenant) ?
                 timeoutConfigCache.get(tenant) : timeoutConfigCache.getDefault();
         return calculateKeepAliveTimeout(config, variableHeader.keepAliveTimeSeconds());
     }
@@ -253,7 +251,7 @@ public abstract class AbstractCommonProtocolMethodProcessor implements ProtocolM
         return tenant;
     }
 
-    private static int calculateKeepAliveTimeout(KeepAliveTimeoutConfig config, int clientRequestedTimeout) {
+    private static int calculateKeepAliveTimeout(TimeoutConfigCache.KeepAliveTimeoutConfig config, int clientRequestedTimeout) {
         int timeoutSeconds = config.getTimeoutSeconds();
         int timeoutByRatio = Math.round(clientRequestedTimeout * config.getTimeoutRatio());
         return Math.max(timeoutSeconds, timeoutByRatio);
@@ -323,204 +321,6 @@ public abstract class AbstractCommonProtocolMethodProcessor implements ProtocolM
                     log.warn("send auth result failed", future.cause());
                 }
             });
-        }
-    }
-
-    @Data
-    @AllArgsConstructor
-    private static class KeepAliveTimeoutConfig {
-        private int timeoutSeconds;
-        private float timeoutRatio;
-    }
-
-    private static class TimeoutConfigCache {
-        private static final int DEFAULT_TIMEOUT_SECONDS = 90;
-        private static final float DEFAULT_TIMEOUT_RATIO = 1.5f;
-        private static final KeepAliveTimeoutConfig DEFAULT_CONFIG =
-                new KeepAliveTimeoutConfig(DEFAULT_TIMEOUT_SECONDS, DEFAULT_TIMEOUT_RATIO);
-
-        private final ConcurrentHashMap<String, KeepAliveTimeoutConfig> configCache = new ConcurrentHashMap<>();
-        private final C8DB c8db;
-
-        public TimeoutConfigCache() throws Exception {
-            C8Retriever.any(() -> {
-                new CollectionChangeListener()
-                        .listen(MM_TENANT, SYSTEM_FABRIC, "_c8federation", (reader, msg) -> loadConfig());
-                return null;
-            });
-
-            c8db = C8Retriever.any(() -> {
-                C8DBCluster cluster = new C8DBCluster();
-                cluster.init();
-                return cluster.getC8DB();
-            });
-            log.info("C8DBCluster connected.");
-
-            loadConfig();
-        }
-
-        private void loadConfig() {
-            if (c8db == null) {
-                log.warn("Cannot load config. C8DB is not initialized.");
-                return;
-            }
-
-            try {
-                Object doc = c8db.db(MM_TENANT, SYSTEM_FABRIC).query(
-                        "FOR doc in @@collection FILTER doc._key=='streamsMqttKeepAliveTimeout' RETURN doc",
-                        ImmutableMap.of("@collection", C8FEDERATION_COLLECTION_NAME),
-                        Object.class).first();
-
-                if (doc != null) {
-                    log.debug("Got timeout configs from DB. {}", doc);
-
-                    Map<String, Object> configs = (Map<String, Object>) ((Map<String, Object>) doc).get("configs");
-
-                    if (configs != null) {
-                        configCache.clear();
-
-                        for (String tenant : configs.keySet()) {
-                            log.debug("Loading timeout config for {}.", tenant);
-
-                            try {
-                                Map<String, Object> configMap = (Map<String, Object>) configs.get(tenant);
-                                long timeoutSeconds = (long) configMap.get("timeoutSeconds");
-                                double timeoutRatio = (double) configMap.get("timeoutRatio");
-                                KeepAliveTimeoutConfig config =
-                                        new KeepAliveTimeoutConfig((int) timeoutSeconds, (float) timeoutRatio);
-
-                                log.debug("configMap={}, KeepAliveTimeoutConfig={}", configMap, config);
-
-                                configCache.put(tenant, config);
-                            } catch (Exception e) {
-                                log.warn("Could not decode timeout config for {}. {}", tenant, e.getMessage());
-                            }
-                        }
-                    }
-                }
-            } catch (Exception e) {
-                log.error("Could not load config.", e);
-            }
-        }
-
-        public KeepAliveTimeoutConfig getDefault() {
-            return DEFAULT_CONFIG;
-        }
-
-        public KeepAliveTimeoutConfig get(String tenant) {
-            return configCache.getOrDefault(tenant, getDefault());
-        }
-    }
-
-    private static class ValidationKeyCache {
-        private final CopyOnWriteArrayList<ValidationKeyInfo> validationKeyInfo = new CopyOnWriteArrayList<>();
-        private final C8DB c8db;
-
-        public ValidationKeyCache() throws Exception {
-            C8Retriever.any(() -> {
-                new CollectionChangeListener()
-                        .listen(MM_TENANT, SYSTEM_FABRIC, KMS_COLLECTION_NAME, (reader, msg) -> loadConfig());
-                return null;
-            });
-
-            c8db = C8Retriever.any(() -> {
-                C8DBCluster cluster = new C8DBCluster();
-                cluster.init();
-                return cluster.getC8DB();
-            });
-            log.info("C8DBCluster connected.");
-
-            c8db.db().createCollection(KMS_COLLECTION_NAME,
-                    new CollectionCreateOptions()
-                            .isLocal(true)
-                            .isSystem(true)
-                            .stream(true)
-                            .waitForSync(true)
-            );
-
-            loadConfig();
-        }
-
-        private void loadConfig() {
-            if (c8db == null) {
-                log.warn("Cannot load config. C8DB is not initialized.");
-                return;
-            }
-
-            try {
-                List<Object> keyObjects = c8db.db(MM_TENANT, SYSTEM_FABRIC).query(
-                        "FOR doc in @@collection FILTER doc.enabled==true AND doc.service=='CUSTOMER_JWT' RETURN doc",
-                        ImmutableMap.of("@collection", KMS_COLLECTION_NAME),
-                        Object.class).asListRemaining();
-
-                validationKeyInfo.clear();
-
-                for (Object ko : keyObjects) {
-                    log.debug("Loading key config {}.", ko);
-
-                    try {
-                        Map<String, Object> km = (Map<String, Object>) ko;
-                        String tenant = (String) km.get("tenant");
-                        String dataKey = (String) km.get("dataKey");
-                        String kid = (String) km.get("kid");
-                        ValidationKeyInfo info = new ValidationKeyInfo(tenant, dataKey, kid);
-
-                        log.debug("ValidationKeyInfo={}", info);
-
-                        validationKeyInfo.add(info);
-                    } catch (Exception e) {
-                        log.warn("Could not decode key config for {}. {}", ko, e.getMessage());
-                    }
-                }
-            } catch (Exception e) {
-                log.error("Could not load config.", e);
-            }
-        }
-
-        public String getTenantForJwt(String jwt, String alg) {
-            ValidationKeyInfo keyInfo = null;
-            for (ValidationKeyInfo info : validationKeyInfo) {
-                String dataKey = info.dataKey;
-                if (dataKey != null) {
-                    try {
-                        Key validationKey = alg.startsWith("HS") ?
-                                Keys.hmacShaKeyFor(dataKey.getBytes()) :
-                                AuthTokenUtils.decodePublicKey(
-                                        Base64.getDecoder().decode(dataKey), SignatureAlgorithm.forName(alg));
-
-                        Jwts.parserBuilder().setSigningKey(validationKey).build().parse(jwt);
-                        keyInfo = info;
-                        break;
-                    } catch (Exception e) {
-                        // Ignore
-                        log.debug("JWT validation failed with validation key info: {}", keyInfo);
-                    }
-                }
-            }
-
-            if (keyInfo != null) {
-                return keyInfo.tenant;
-            } else {
-                return null;
-            }
-        }
-
-        public String getTenantForKid(String kid) {
-            for (ValidationKeyInfo info : validationKeyInfo) {
-                if (kid.equals(info.kid)) {
-                    return info.tenant;
-                }
-            }
-
-            return null;
-        }
-
-        @Data
-        @AllArgsConstructor
-        public static class ValidationKeyInfo {
-            private String tenant;
-            private String dataKey;
-            private String kid;
         }
     }
 }
