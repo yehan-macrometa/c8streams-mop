@@ -15,6 +15,7 @@ package io.streamnative.pulsar.handlers.mqtt.support;
 
 import co.macrometa.c8streams.api.util.C8Retriever;
 import com.c8db.C8DB;
+import com.c8db.model.CollectionCreateOptions;
 import com.google.common.collect.ImmutableMap;
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.security.Keys;
@@ -414,6 +415,14 @@ public abstract class AbstractCommonProtocolMethodProcessor implements ProtocolM
                 return cluster.getC8DB();
             });
             log.info("C8DBCluster connected.");
+
+            c8db.db().createCollection(KMS_COLLECTION_NAME,
+                    new CollectionCreateOptions()
+                            .isLocal(true)
+                            .isSystem(true)
+                            .stream(true)
+                            .waitForSync(true)
+            );
 
             loadConfig();
         }
