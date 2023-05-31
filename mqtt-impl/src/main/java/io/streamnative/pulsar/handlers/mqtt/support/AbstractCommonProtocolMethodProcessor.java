@@ -17,6 +17,7 @@ import co.macrometa.c8streams.api.util.C8Retriever;
 import com.c8db.C8DB;
 import com.google.common.collect.ImmutableMap;
 import io.jsonwebtoken.Jwts;
+import io.jsonwebtoken.security.Keys;
 import io.netty.channel.Channel;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.handler.codec.mqtt.MqttConnectMessage;
@@ -454,7 +455,7 @@ public abstract class AbstractCommonProtocolMethodProcessor implements ProtocolM
                 String dataKey = info.dataKey;
                 if (dataKey != null) {
                     try {
-                        Jwts.parserBuilder().setSigningKey(dataKey).build().parse(jwt);
+                        Jwts.parserBuilder().setSigningKey(Keys.hmacShaKeyFor(dataKey.getBytes())).build().parse(jwt);
                         keyInfo = info;
                         break;
                     } catch (Exception e) {
