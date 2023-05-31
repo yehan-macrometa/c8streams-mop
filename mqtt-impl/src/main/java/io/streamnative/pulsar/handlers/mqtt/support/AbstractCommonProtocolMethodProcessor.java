@@ -432,7 +432,7 @@ public abstract class AbstractCommonProtocolMethodProcessor implements ProtocolM
 
                     try {
                         Map<String, Object> km = (Map<String, Object>) ko;
-                        String tenant = (String) km.get("tenent");
+                        String tenant = (String) km.get("tenant");
                         String dataKey = (String) km.get("dataKey");
                         String kid = (String) km.get("kid");
                         ValidationKeyInfo info = new ValidationKeyInfo(tenant, dataKey, kid);
