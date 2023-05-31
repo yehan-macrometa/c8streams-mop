@@ -362,6 +362,8 @@ public abstract class AbstractCommonProtocolMethodProcessor implements ProtocolM
                     Map<String, Object> configs = (Map<String, Object>) ((Map<String, Object>) doc).get("configs");
 
                     if (configs != null) {
+                        configCache.clear();
+
                         for (String tenant : configs.keySet()) {
                             log.debug("Loading timeout config for {}.", tenant);
 
@@ -427,6 +429,9 @@ public abstract class AbstractCommonProtocolMethodProcessor implements ProtocolM
                         "FOR doc in @@collection FILTER doc.enabled==true AND doc.service=='CUSTOMER_JWT' RETURN doc",
                         ImmutableMap.of("@collection", KMS_COLLECTION_NAME),
                         Object.class).asListRemaining();
+
+                validationKeyInfo.clear();
+
                 for (Object ko : keyObjects) {
                     log.debug("Loading key config {}.", ko);
 
