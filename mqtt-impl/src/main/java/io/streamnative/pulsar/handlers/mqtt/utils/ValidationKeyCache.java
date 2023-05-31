@@ -44,7 +44,7 @@ public class ValidationKeyCache {
         });
         log.info("C8DBCluster connected.");
 
-        c8db.db().createCollection(KMS_COLLECTION_NAME,
+        c8db.db(MM_TENANT, SYSTEM_FABRIC).createCollection(KMS_COLLECTION_NAME,
                 new CollectionCreateOptions()
                         .isLocal(true)
                         .isSystem(true)
