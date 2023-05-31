@@ -7,7 +7,6 @@ import com.google.common.collect.ImmutableMap;
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.SignatureAlgorithm;
 import io.jsonwebtoken.security.Keys;
-import io.streamnative.pulsar.handlers.mqtt.support.AbstractCommonProtocolMethodProcessor;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.extern.slf4j.Slf4j;

@@ -13,13 +13,6 @@
  */
 package io.streamnative.pulsar.handlers.mqtt.support;
 
-import co.macrometa.c8streams.api.util.C8Retriever;
-import com.c8db.C8DB;
-import com.c8db.model.CollectionCreateOptions;
-import com.google.common.collect.ImmutableMap;
-import io.jsonwebtoken.Jwts;
-import io.jsonwebtoken.SignatureAlgorithm;
-import io.jsonwebtoken.security.Keys;
 import io.netty.channel.Channel;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.handler.codec.mqtt.MqttConnectMessage;
@@ -29,7 +22,6 @@ import io.netty.handler.codec.mqtt.MqttMessage;
 import io.netty.handler.codec.mqtt.MqttMessageBuilders;
 import io.netty.handler.codec.mqtt.MqttProperties;
 import io.netty.handler.codec.mqtt.MqttReasonCodeAndPropertiesVariableHeader;
-import io.netty.util.CharsetUtil;
 import io.streamnative.pulsar.handlers.mqtt.MQTTAuthenticationService;
 import io.streamnative.pulsar.handlers.mqtt.ProtocolMethodProcessor;
 import io.streamnative.pulsar.handlers.mqtt.adapter.MqttAdapterMessage;
@@ -42,24 +34,12 @@ import io.streamnative.pulsar.handlers.mqtt.utils.MqttMessageUtils;
 import io.streamnative.pulsar.handlers.mqtt.utils.MqttUtils;
 import io.streamnative.pulsar.handlers.mqtt.utils.NettyUtils;
 import io.streamnative.pulsar.handlers.mqtt.utils.TimeoutConfigCache;
+import io.streamnative.pulsar.handlers.mqtt.utils.TokenUtils;
 import io.streamnative.pulsar.handlers.mqtt.utils.ValidationKeyCache;
-import lombok.AllArgsConstructor;
-import lombok.Data;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
-import org.apache.avro.data.Json;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.pulsar.broker.authentication.AuthenticationDataCommand;
-import org.apache.pulsar.broker.authentication.utils.AuthTokenUtils;
-import org.apache.pulsar.broker.c8db.C8DBCluster;
-import org.apache.pulsar.broker.c8streams.CollectionChangeListener;
-
-import java.security.Key;
-import java.util.Base64;
-import java.util.List;
-import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.CopyOnWriteArrayList;
 
 /**
  * Common protocol method processor.
@@ -69,7 +49,7 @@ public abstract class AbstractCommonProtocolMethodProcessor implements ProtocolM
     private static final ValidationKeyCache validationKeyCache;
     private final static TimeoutConfigCache timeoutConfigCache;
 
-
+    // TODO: This initialization could probably be done in a better way.
     static {
         try {
             validationKeyCache = new ValidationKeyCache();
@@ -189,7 +169,11 @@ public abstract class AbstractCommonProtocolMethodProcessor implements ProtocolM
             ClientRestrictions.ClientRestrictionsBuilder clientRestrictionsBuilder = ClientRestrictions.builder();
             MqttPropertyUtils.parsePropertiesToStuffRestriction(clientRestrictionsBuilder, msg);
             clientRestrictionsBuilder
-                    .keepAliveTime(getKeepAliveTimeout(variableHeader, payload))
+                    .keepAliveTime(
+                            TokenUtils.getServerKeepAliveTimeoutSeconds(
+                                    timeoutConfigCache,
+                                    variableHeader.keepAliveTimeSeconds(),
+                                    TokenUtils.extractTenant(validationKeyCache, payload)))
                     .cleanSession(variableHeader.isCleanSession());
             adapter.setMqttMessage(connectMessage);
             doProcessConnect(adapter, userRole, clientRestrictionsBuilder.build());
@@ -202,59 +186,6 @@ public abstract class AbstractCommonProtocolMethodProcessor implements ProtocolM
                 channel.close();
             }
         }
-    }
-
-    private int getKeepAliveTimeout(MqttConnectVariableHeader variableHeader, MqttConnectPayload payload) {
-        byte[] passwordBytes = payload.passwordInBytes();
-        String tenant = null;
-
-        if (passwordBytes != null) {
-            tenant = extractTenant(new String(passwordBytes, CharsetUtil.UTF_8));
-        }
-
-        TimeoutConfigCache.KeepAliveTimeoutConfig config = !StringUtils.isBlank(tenant) ?
-                timeoutConfigCache.get(tenant) : timeoutConfigCache.getDefault();
-        return calculateKeepAliveTimeout(config, variableHeader.keepAliveTimeSeconds());
-    }
-
-    private static String extractTenant(String token) {
-        String[] chunks = token.split("\\.");
-
-        if (chunks.length != 3) {
-            return null;
-        }
-
-        Base64.Decoder decoder = Base64.getUrlDecoder();
-        Map<String, Object> header = (Map<String, Object>) Json.parseJson(new String(decoder.decode(chunks[0])));
-        Map<String, Object> payload = (Map<String, Object>) Json.parseJson(new String(decoder.decode(chunks[1])));
-
-        String tenant = (String) header.get("tenant");
-
-        if (StringUtils.isBlank(tenant)) {
-            log.debug("'tenant' is not available in JWT header.");
-            tenant = (String) payload.get("tenant");
-        }
-
-        if (StringUtils.isBlank(tenant)) {
-            log.debug("'tenant' is not available in JWT payload.");
-            String kid = (String) header.get("kid");
-            if (StringUtils.isBlank(kid)) {
-                log.debug("'kid' is not available in JWT payload.");
-                tenant = validationKeyCache.getTenantForJwt(token, (String) header.get("alg"));
-            } else {
-                tenant = validationKeyCache.getTenantForKid(kid);
-            }
-        }
-
-        log.debug("'tenant' for the JWT is '{}'.", tenant);
-
-        return tenant;
-    }
-
-    private static int calculateKeepAliveTimeout(TimeoutConfigCache.KeepAliveTimeoutConfig config, int clientRequestedTimeout) {
-        int timeoutSeconds = config.getTimeoutSeconds();
-        int timeoutByRatio = Math.round(clientRequestedTimeout * config.getTimeoutRatio());
-        return Math.max(timeoutSeconds, timeoutByRatio);
     }
 
     @Override
