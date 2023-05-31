@@ -224,17 +224,22 @@ public abstract class AbstractCommonProtocolMethodProcessor implements ProtocolM
         String tenant = (String) header.get("tenant");
 
         if (StringUtils.isBlank(tenant)) {
+            log.debug("'tenant' is not available in JWT header.");
             tenant = (String) payload.get("tenant");
         }
 
         if (StringUtils.isBlank(tenant)) {
+            log.debug("'tenant' is not available in JWT payload.");
             String kid = (String) header.get("kid");
             if (StringUtils.isBlank(kid)) {
+                log.debug("'kid' is not available in JWT payload.");
                 tenant = validationKeyCache.getTenantForJwt(token);
             } else {
                 tenant = validationKeyCache.getTenantForKid(kid);
             }
         }
+
+        log.debug("'tenant' for the JWT is '{}'.", tenant);
 
         return tenant;
     }
