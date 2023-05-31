@@ -49,6 +49,7 @@ import org.apache.pulsar.broker.c8db.C8DBCluster;
 import org.apache.pulsar.broker.c8streams.CollectionChangeListener;
 
 import java.util.Base64;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
@@ -416,10 +417,26 @@ public abstract class AbstractCommonProtocolMethodProcessor implements ProtocolM
             }
 
             try {
-                validationKeyInfo.addAll(c8db.db(MM_TENANT, SYSTEM_FABRIC).query(
-                        "FOR doc in @@collection FILTER doc.enabled==true AND doc.service=='CUSTOMER_JWT' RETURN doc.dataKey",
+                List<Object> keyObjects = c8db.db(MM_TENANT, SYSTEM_FABRIC).query(
+                        "FOR doc in @@collection FILTER doc.enabled==true AND doc.service=='CUSTOMER_JWT' RETURN doc",
                         ImmutableMap.of("@collection", KMS_COLLECTION_NAME),
-                        ValidationKeyInfo.class).asListRemaining());
+                        Object.class).asListRemaining();
+                for (Object ko : keyObjects) {
+                    log.debug("Loading key config {}.", ko);
+
+                    try {
+                        Map<String, Object> km = (Map<String, Object>) ko;
+                        String tenant = (String) km.get("tenent");
+                        String dataKey = (String) km.get("dataKey");
+                        ValidationKeyInfo info = new ValidationKeyInfo(tenant, dataKey);
+
+                        log.debug("ValidationKeyInfo={}", info);
+
+                        validationKeyInfo.add(info);
+                    } catch (Exception e) {
+                        log.warn("Could not decode key config for {}. {}", ko, e.getMessage());
+                    }
+                }
             } catch (Exception e) {
                 log.error("Could not load config.", e);
             }
@@ -448,6 +465,7 @@ public abstract class AbstractCommonProtocolMethodProcessor implements ProtocolM
         }
 
         @Data
+        @AllArgsConstructor
         public static class ValidationKeyInfo {
             private String tenant;
             private String dataKey;
