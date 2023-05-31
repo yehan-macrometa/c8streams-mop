@@ -18,6 +18,7 @@ import com.c8db.C8DB;
 import com.c8db.model.CollectionCreateOptions;
 import com.google.common.collect.ImmutableMap;
 import io.jsonwebtoken.Jwts;
+import io.jsonwebtoken.SignatureAlgorithm;
 import io.jsonwebtoken.security.Keys;
 import io.netty.channel.Channel;
 import io.netty.channel.ChannelHandlerContext;
@@ -47,9 +48,11 @@ import lombok.extern.slf4j.Slf4j;
 import org.apache.avro.data.Json;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.pulsar.broker.authentication.AuthenticationDataCommand;
+import org.apache.pulsar.broker.authentication.utils.AuthTokenUtils;
 import org.apache.pulsar.broker.c8db.C8DBCluster;
 import org.apache.pulsar.broker.c8streams.CollectionChangeListener;
 
+import java.security.Key;
 import java.util.Base64;
 import java.util.List;
 import java.util.Map;
@@ -233,7 +236,7 @@ public abstract class AbstractCommonProtocolMethodProcessor implements ProtocolM
             String kid = (String) header.get("kid");
             if (StringUtils.isBlank(kid)) {
                 log.debug("'kid' is not available in JWT payload.");
-                tenant = validationKeyCache.getTenantForJwt(token);
+                tenant = validationKeyCache.getTenantForJwt(token, (String) header.get("alg"));
             } else {
                 tenant = validationKeyCache.getTenantForKid(kid);
             }
@@ -468,17 +471,23 @@ public abstract class AbstractCommonProtocolMethodProcessor implements ProtocolM
             }
         }
 
-        public String getTenantForJwt(String jwt) {
+        public String getTenantForJwt(String jwt, String alg) {
             ValidationKeyInfo keyInfo = null;
             for (ValidationKeyInfo info : validationKeyInfo) {
                 String dataKey = info.dataKey;
                 if (dataKey != null) {
                     try {
-                        Jwts.parserBuilder().setSigningKey(Keys.hmacShaKeyFor(dataKey.getBytes())).build().parse(jwt);
+                        Key validationKey = alg.startsWith("HS") ?
+                                Keys.hmacShaKeyFor(dataKey.getBytes()) :
+                                AuthTokenUtils.decodePublicKey(
+                                        Base64.getDecoder().decode(dataKey), SignatureAlgorithm.forName(alg));
+
+                        Jwts.parserBuilder().setSigningKey(validationKey).build().parse(jwt);
                         keyInfo = info;
                         break;
                     } catch (Exception e) {
                         // Ignore
+                        log.debug("JWT validation failed with validation key info: {}", keyInfo);
                     }
                 }
             }
