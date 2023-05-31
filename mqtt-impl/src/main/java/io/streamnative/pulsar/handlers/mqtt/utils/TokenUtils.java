@@ -1,3 +1,6 @@
+/**
+ * Copyright (c) 2023 Macrometa Corp All rights reserved.
+ */
 package io.streamnative.pulsar.handlers.mqtt.utils;
 
 import io.netty.handler.codec.mqtt.MqttConnectPayload;

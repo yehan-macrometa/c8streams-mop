@@ -10,6 +10,8 @@
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
  * See the License for the specific language governing permissions and
  * limitations under the License.
+ *
+ * Modifications copyright (c) 2023 Macrometa Corp All rights reserved.
  */
 package io.streamnative.pulsar.handlers.mqtt.support;
 
@@ -46,6 +48,8 @@ import org.apache.pulsar.broker.authentication.AuthenticationDataCommand;
  */
 @Slf4j
 public abstract class AbstractCommonProtocolMethodProcessor implements ProtocolMethodProcessor {
+
+    // Macrometa modification: Add validationKeyCache and timeoutConfigCache
     private static final ValidationKeyCache validationKeyCache;
     private final static TimeoutConfigCache timeoutConfigCache;
 
@@ -169,6 +173,7 @@ public abstract class AbstractCommonProtocolMethodProcessor implements ProtocolM
             ClientRestrictions.ClientRestrictionsBuilder clientRestrictionsBuilder = ClientRestrictions.builder();
             MqttPropertyUtils.parsePropertiesToStuffRestriction(clientRestrictionsBuilder, msg);
             clientRestrictionsBuilder
+                    // Macrometa modification: Calculate keep-alive timeout according to user config
                     .keepAliveTime(
                             TokenUtils.getServerKeepAliveTimeoutSeconds(
                                     timeoutConfigCache,

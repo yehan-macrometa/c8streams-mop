@@ -1,5 +1,7 @@
+/**
+ * Copyright (c) 2023 Macrometa Corp All rights reserved.
+ */
 package io.streamnative.pulsar.handlers.mqtt.utils;
-
 
 import co.macrometa.c8streams.api.util.C8Retriever;
 import com.c8db.C8DB;
