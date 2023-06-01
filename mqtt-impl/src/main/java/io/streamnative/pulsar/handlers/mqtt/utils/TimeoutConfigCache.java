@@ -67,20 +67,26 @@ public class TimeoutConfigCache {
                     configCache.clear();
 
                     for (String tenant : configs.keySet()) {
-                        log.debug("Loading timeout config for {}.", tenant);
+                        log.debug("Loading timeout config for tenant {}.", tenant);
 
-                        try {
-                            Map<String, Object> configMap = (Map<String, Object>) configs.get(tenant);
-                            long timeoutSeconds = (long) configMap.get("timeoutSeconds");
-                            double timeoutRatio = (double) configMap.get("timeoutRatio");
-                            KeepAliveTimeoutConfig config =
-                                    new KeepAliveTimeoutConfig((int) timeoutSeconds, (float) timeoutRatio);
+                        Map<String, Object> tenantConfigs = (Map<String, Object>) configs.get(tenant);
 
-                            log.debug("configMap={}, KeepAliveTimeoutConfig={}", configMap, config);
+                        for (String fabric : tenantConfigs.keySet()) {
+                            log.debug("Loading timeout config for fabric {}.{}.", tenant, fabric);
 
-                            configCache.put(tenant, config);
-                        } catch (Exception e) {
-                            log.warn("Could not decode timeout config for {}. {}", tenant, e.getMessage());
+                            try {
+                                Map<String, Object> configMap = (Map<String, Object>) configs.get(fabric);
+                                long timeoutSeconds = (long) configMap.get("timeoutSeconds");
+                                double timeoutRatio = (double) configMap.get("timeoutRatio");
+                                KeepAliveTimeoutConfig config =
+                                        new KeepAliveTimeoutConfig((int) timeoutSeconds, (float) timeoutRatio);
+
+                                log.debug("configMap={}, KeepAliveTimeoutConfig={}", configMap, config);
+
+                                configCache.put(String.format("%s.%s", tenant, fabric), config);
+                            } catch (Exception e) {
+                                log.warn("Could not decode timeout config for {}.{}. {}", tenant, fabric, e.getMessage());
+                            }
                         }
                     }
                 }
@@ -94,8 +100,8 @@ public class TimeoutConfigCache {
         return DEFAULT_CONFIG;
     }
 
-    public KeepAliveTimeoutConfig get(String tenant) {
-        return configCache.getOrDefault(tenant, getDefault());
+    public KeepAliveTimeoutConfig get(String tenantFabric) {
+        return configCache.getOrDefault(tenantFabric, getDefault());
     }
 
     @Data

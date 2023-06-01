@@ -178,7 +178,7 @@ public abstract class AbstractCommonProtocolMethodProcessor implements ProtocolM
                             TokenUtils.getServerKeepAliveTimeoutSeconds(
                                     timeoutConfigCache,
                                     variableHeader.keepAliveTimeSeconds(),
-                                    TokenUtils.extractTenant(validationKeyCache, payload)))
+                                    TokenUtils.extractTenantFabric(validationKeyCache, payload)))
                     .cleanSession(variableHeader.isCleanSession());
             adapter.setMqttMessage(connectMessage);
             doProcessConnect(adapter, userRole, clientRestrictionsBuilder.build());

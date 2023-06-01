@@ -29,7 +29,7 @@ import static io.streamnative.pulsar.handlers.mqtt.Constants.SYSTEM_FABRIC;
 
 @Slf4j
 public class ValidationKeyCache {
-    private final CopyOnWriteArrayList<ValidationKeyCache.ValidationKeyInfo> validationKeyInfo = new CopyOnWriteArrayList<>();
+    private final CopyOnWriteArrayList<ValidationKeyInfo> validationKeyInfo = new CopyOnWriteArrayList<>();
     private final C8DB c8db;
 
     public ValidationKeyCache() throws Exception {
@@ -77,9 +77,10 @@ public class ValidationKeyCache {
                 try {
                     Map<String, Object> km = (Map<String, Object>) ko;
                     String tenant = (String) km.get("tenant");
+                    String fabric = (String) km.get("fabric");
                     String dataKey = (String) km.get("dataKey");
                     String kid = (String) km.get("kid");
-                    ValidationKeyCache.ValidationKeyInfo info = new ValidationKeyCache.ValidationKeyInfo(tenant, dataKey, kid);
+                    ValidationKeyInfo info = new ValidationKeyInfo(tenant, fabric, dataKey, kid);
 
                     log.debug("ValidationKeyInfo={}", info);
 
@@ -93,9 +94,9 @@ public class ValidationKeyCache {
         }
     }
 
-    public String getTenantForJwt(String jwt, String alg) {
-        ValidationKeyCache.ValidationKeyInfo keyInfo = null;
-        for (ValidationKeyCache.ValidationKeyInfo info : validationKeyInfo) {
+    public String getTenantFabricForJwt(String jwt, String alg) {
+        ValidationKeyInfo keyInfo = null;
+        for (ValidationKeyInfo info : validationKeyInfo) {
             String dataKey = info.dataKey;
             if (dataKey != null) {
                 try {
@@ -115,16 +116,16 @@ public class ValidationKeyCache {
         }
 
         if (keyInfo != null) {
-            return keyInfo.tenant;
+            return keyInfo.getTenantFabric();
         } else {
             return null;
         }
     }
 
-    public String getTenantForKid(String kid) {
-        for (ValidationKeyCache.ValidationKeyInfo info : validationKeyInfo) {
+    public String getTenantFabricForKid(String kid) {
+        for (ValidationKeyInfo info : validationKeyInfo) {
             if (kid.equals(info.kid)) {
-                return info.tenant;
+                return info.getTenantFabric();
             }
         }
 
@@ -135,7 +136,12 @@ public class ValidationKeyCache {
     @AllArgsConstructor
     public static class ValidationKeyInfo {
         private String tenant;
+        private String fabric;
         private String dataKey;
         private String kid;
+
+        public String getTenantFabric() {
+            return String.format("%s.%s", tenant, fabric);
+        }
     }
 }
