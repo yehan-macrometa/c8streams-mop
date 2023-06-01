@@ -4,6 +4,7 @@
 package io.streamnative.pulsar.handlers.mqtt.utils;
 
 import co.macrometa.c8streams.api.util.C8Retriever;
+import com.c8db.C8Collection;
 import com.c8db.C8DB;
 import com.c8db.model.CollectionCreateOptions;
 import com.google.common.collect.ImmutableMap;
@@ -46,13 +47,17 @@ public class ValidationKeyCache {
         });
         log.info("C8DBCluster connected.");
 
-        c8db.db(MM_TENANT, SYSTEM_FABRIC).createCollection(KMS_COLLECTION_NAME,
-                new CollectionCreateOptions()
+        C8Retriever.any(() -> {
+            C8Collection kmsKeys = c8db.db(MM_TENANT, SYSTEM_FABRIC).collection(KMS_COLLECTION_NAME);
+            if (!kmsKeys.exists()) {
+                kmsKeys.create(new CollectionCreateOptions()
                         .isLocal(true)
                         .isSystem(true)
                         .stream(true)
-                        .waitForSync(true)
-        );
+                        .waitForSync(true));
+            }
+            return null;
+        });
 
         loadConfig();
     }
