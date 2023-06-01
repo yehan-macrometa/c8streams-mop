@@ -42,12 +42,15 @@ public class TokenUtils {
         Map<String, Object> header = (Map<String, Object>) Json.parseJson(new String(decoder.decode(chunks[0])));
 
         String kid = (String) header.get("kid");
-        String tenantFabric = null;
+        String alg = (String) header.get("alg");
+        String tenantFabric;
+
+        log.debug("Extracting tenant.fabric. kid={}", kid);
+
         if (StringUtils.isBlank(kid)) {
-            log.debug("'kid' is not available in JWT payload.");
-            tenantFabric = validationKeyCache.getTenantFabricForJwt(token, (String) header.get("alg"));
+            tenantFabric = validationKeyCache.getTenantFabricForJwt(token, alg);
         } else {
-            tenantFabric = validationKeyCache.getTenantFabricForKid(kid);
+            tenantFabric = validationKeyCache.getTenantFabricForKid(kid, token, alg);
         }
 
         log.debug("'tenant.fabric' for the JWT is '{}'.", tenantFabric);

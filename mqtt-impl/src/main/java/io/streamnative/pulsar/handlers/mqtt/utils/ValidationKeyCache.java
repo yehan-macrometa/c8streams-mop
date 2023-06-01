@@ -65,7 +65,7 @@ public class ValidationKeyCache {
 
         try {
             List<Object> keyObjects = c8db.db(MM_TENANT, SYSTEM_FABRIC).query(
-                    "FOR doc in @@collection FILTER doc.enabled==true AND doc.service=='CUSTOMER_JWT' RETURN doc",
+                    "FOR doc in @@collection FILTER doc.service=='CUSTOMER_JWT' AND doc.enabled==true AND doc.dataKey != NULL RETURN doc",
                     ImmutableMap.of("@collection", KMS_COLLECTION_NAME),
                     Object.class).asListRemaining();
 
@@ -95,41 +95,40 @@ public class ValidationKeyCache {
     }
 
     public String getTenantFabricForJwt(String jwt, String alg) {
-        ValidationKeyInfo keyInfo = null;
         for (ValidationKeyInfo info : validationKeyInfo) {
-            String dataKey = info.dataKey;
-            if (dataKey != null) {
-                try {
-                    Key validationKey = alg.startsWith("HS") ?
-                            Keys.hmacShaKeyFor(dataKey.getBytes()) :
-                            AuthTokenUtils.decodePublicKey(
-                                    Base64.getDecoder().decode(dataKey), SignatureAlgorithm.forName(alg));
-
-                    Jwts.parserBuilder().setSigningKey(validationKey).build().parse(jwt);
-                    keyInfo = info;
-                    break;
-                } catch (Exception e) {
-                    // Ignore
-                    log.debug("JWT validation failed with validation key info: {}", keyInfo);
-                }
-            }
-        }
-
-        if (keyInfo != null) {
-            return keyInfo.getTenantFabric();
-        } else {
-            return null;
-        }
-    }
-
-    public String getTenantFabricForKid(String kid) {
-        for (ValidationKeyInfo info : validationKeyInfo) {
-            if (kid.equals(info.kid)) {
+            if (isValidCombination(info, jwt, alg)) {
                 return info.getTenantFabric();
             }
         }
 
         return null;
+    }
+
+    public String getTenantFabricForKid(String kid, String jwt, String alg) {
+        for (ValidationKeyInfo info : validationKeyInfo) {
+            if (kid.equals(info.kid) && isValidCombination(info, jwt, alg)) {
+                return info.getTenantFabric();
+            }
+        }
+
+        return null;
+    }
+
+    private boolean isValidCombination(ValidationKeyInfo keyInfo, String jwt, String alg) {
+        String dataKey = keyInfo.dataKey;
+        try {
+            Key validationKey = alg.startsWith("HS") ?
+                    Keys.hmacShaKeyFor(dataKey.getBytes()) :
+                    AuthTokenUtils.decodePublicKey(
+                            Base64.getDecoder().decode(dataKey), SignatureAlgorithm.forName(alg));
+
+            Jwts.parserBuilder().setSigningKey(validationKey).build().parse(jwt);
+            return true;
+        } catch (Exception e) {
+            // Ignore
+            log.debug("JWT validation failed with validation key info: {}", keyInfo);
+            return false;
+        }
     }
 
     @Data
