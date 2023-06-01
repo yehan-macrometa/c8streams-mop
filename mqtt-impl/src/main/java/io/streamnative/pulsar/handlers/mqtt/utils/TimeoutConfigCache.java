@@ -75,7 +75,7 @@ public class TimeoutConfigCache {
                             log.debug("Loading timeout config for fabric {}.{}.", tenant, fabric);
 
                             try {
-                                Map<String, Object> configMap = (Map<String, Object>) configs.get(fabric);
+                                Map<String, Object> configMap = (Map<String, Object>) tenantConfigs.get(fabric);
                                 long timeoutSeconds = (long) configMap.get("timeoutSeconds");
                                 double timeoutRatio = (double) configMap.get("timeoutRatio");
                                 KeepAliveTimeoutConfig config =
