@@ -70,7 +70,7 @@ public class ValidationKeyCache {
 
         try {
             List<Object> keyObjects = c8db.db(MM_TENANT, SYSTEM_FABRIC).query(
-                    "FOR doc in @@collection FILTER doc.service=='CUSTOMER_JWT' AND doc.enabled==true AND doc.dataKey != NULL RETURN doc",
+                    "FOR doc in @@collection FILTER doc.service=='CUSTOMER_JWT' AND doc.enabled==true AND doc.dataKey != NULL RETURN { tenant: doc.tenant, fabric: doc.fabric, dataKey: doc.dataKey, kid: doc.keyOptions.kid }",
                     ImmutableMap.of("@collection", KMS_COLLECTION_NAME),
                     Object.class).asListRemaining();
 
