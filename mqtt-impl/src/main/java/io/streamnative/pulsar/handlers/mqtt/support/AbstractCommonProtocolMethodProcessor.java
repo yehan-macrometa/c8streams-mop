@@ -32,6 +32,7 @@ import io.streamnative.pulsar.handlers.mqtt.messages.MqttPropertyUtils;
 import io.streamnative.pulsar.handlers.mqtt.messages.ack.MqttConnectAck;
 import io.streamnative.pulsar.handlers.mqtt.messages.codes.mqtt5.Mqtt5DisConnReasonCode;
 import io.streamnative.pulsar.handlers.mqtt.restrictions.ClientRestrictions;
+import io.streamnative.pulsar.handlers.mqtt.utils.AclCache;
 import io.streamnative.pulsar.handlers.mqtt.utils.MqttMessageUtils;
 import io.streamnative.pulsar.handlers.mqtt.utils.MqttUtils;
 import io.streamnative.pulsar.handlers.mqtt.utils.NettyUtils;
@@ -49,9 +50,10 @@ import org.apache.pulsar.broker.authentication.AuthenticationDataCommand;
 @Slf4j
 public abstract class AbstractCommonProtocolMethodProcessor implements ProtocolMethodProcessor {
 
-    // Macrometa modification: Add validationKeyCache and timeoutConfigCache
+    // Macrometa modification: Add caches
+    protected static final AclCache aclCache;
     private static final ValidationKeyCache validationKeyCache;
-    private final static TimeoutConfigCache timeoutConfigCache;
+    private static final TimeoutConfigCache timeoutConfigCache;
 
     // TODO: This initialization could probably be done in a better way.
     static {
@@ -66,6 +68,13 @@ public abstract class AbstractCommonProtocolMethodProcessor implements ProtocolM
             timeoutConfigCache = new TimeoutConfigCache();
         } catch (Exception e) {
             log.error("Could not initialize TimeoutConfigCache.", e);
+            throw new RuntimeException(e);
+        }
+
+        try {
+            aclCache = new AclCache();
+        } catch (Exception e) {
+            log.error("Could not initialize AclCache.", e);
             throw new RuntimeException(e);
         }
     }
@@ -87,7 +96,7 @@ public abstract class AbstractCommonProtocolMethodProcessor implements ProtocolM
         this.channel = ctx.channel();
     }
 
-    public abstract void doProcessConnect(MqttAdapterMessage msg, String userRole, ClientRestrictions restrictions);
+    public abstract void doProcessConnect(MqttAdapterMessage msg, String userRole, String tenantFabric, ClientRestrictions restrictions);
 
     @Override
     public void processConnect(MqttAdapterMessage adapter) {
@@ -169,6 +178,7 @@ public abstract class AbstractCommonProtocolMethodProcessor implements ProtocolM
             }
             userRole = authResult.getUserRole();
         }
+        String tenantFabric = TokenUtils.extractTenantFabric(validationKeyCache, payload);
         try {
             ClientRestrictions.ClientRestrictionsBuilder clientRestrictionsBuilder = ClientRestrictions.builder();
             MqttPropertyUtils.parsePropertiesToStuffRestriction(clientRestrictionsBuilder, msg);
@@ -178,10 +188,10 @@ public abstract class AbstractCommonProtocolMethodProcessor implements ProtocolM
                             TokenUtils.getServerKeepAliveTimeoutSeconds(
                                     timeoutConfigCache,
                                     variableHeader.keepAliveTimeSeconds(),
-                                    TokenUtils.extractTenantFabric(validationKeyCache, payload)))
+                                    tenantFabric))
                     .cleanSession(variableHeader.isCleanSession());
             adapter.setMqttMessage(connectMessage);
-            doProcessConnect(adapter, userRole, clientRestrictionsBuilder.build());
+            doProcessConnect(adapter, userRole, tenantFabric, clientRestrictionsBuilder.build());
         } catch (InvalidReceiveMaximumException invalidReceiveMaximumException) {
             log.error("[CONNECT] Fail to parse receive maximum because of zero value, CId={}", clientId);
             MqttMessage mqttMessage = MqttConnectAck.errorBuilder().protocolError(protocolVersion);

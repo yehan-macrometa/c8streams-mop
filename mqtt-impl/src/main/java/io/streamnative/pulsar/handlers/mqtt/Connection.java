@@ -64,6 +64,8 @@ public class Connection {
     @Getter
     private final String userRole;
     @Getter
+    private final String tenantFabric;
+    @Getter
     private final MQTTConnectionManager manager;
     @Getter
     private final TopicSubscriptionManager topicSubscriptionManager;
@@ -100,6 +102,7 @@ public class Connection {
         this.clientRestrictions = builder.clientRestrictions;
         this.serverRestrictions = builder.serverRestrictions;
         this.userRole = builder.userRole;
+        this.tenantFabric = builder.tenantFabric;
         this.channel = builder.channel;
         this.manager = builder.connectionManager;
         this.connectMessage = builder.connectMessage;
@@ -277,6 +280,7 @@ public class Connection {
         private int protocolVersion;
         private String clientId;
         private String userRole;
+        private String tenantFabric;
         private WillMessage willMessage;
         private Channel channel;
         private MQTTConnectionManager connectionManager;
@@ -298,6 +302,11 @@ public class Connection {
 
         public ConnectionBuilder userRole(String userRole) {
             this.userRole = userRole;
+            return this;
+        }
+
+        public ConnectionBuilder tenantFabric(String tenantFabric) {
+            this.tenantFabric = tenantFabric;
             return this;
         }
 

@@ -30,8 +30,6 @@ import io.streamnative.pulsar.handlers.mqtt.MQTTConnectionManager;
 import io.streamnative.pulsar.handlers.mqtt.MQTTServerConfiguration;
 import io.streamnative.pulsar.handlers.mqtt.MQTTService;
 import io.streamnative.pulsar.handlers.mqtt.MQTTSubscriptionManager;
-import io.streamnative.pulsar.handlers.mqtt.OutstandingPacket;
-import io.streamnative.pulsar.handlers.mqtt.OutstandingPacketContainer;
 import io.streamnative.pulsar.handlers.mqtt.OutstandingVirtualPacket;
 import io.streamnative.pulsar.handlers.mqtt.OutstandingVirtualPacketContainer;
 import io.streamnative.pulsar.handlers.mqtt.PacketIdGenerator;
@@ -40,7 +38,6 @@ import io.streamnative.pulsar.handlers.mqtt.TopicFilter;
 import io.streamnative.pulsar.handlers.mqtt.adapter.MqttAdapterMessage;
 import io.streamnative.pulsar.handlers.mqtt.exception.MQTTNoSubscriptionExistedException;
 import io.streamnative.pulsar.handlers.mqtt.exception.MQTTServerException;
-import io.streamnative.pulsar.handlers.mqtt.exception.MQTTTopicNotExistedException;
 import io.streamnative.pulsar.handlers.mqtt.exception.restrictions.InvalidSessionExpireIntervalException;
 import io.streamnative.pulsar.handlers.mqtt.messages.MqttPropertyUtils;
 import io.streamnative.pulsar.handlers.mqtt.messages.ack.MqttAck;
@@ -64,25 +61,18 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
-import java.util.Objects;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.stream.Collectors;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
-import org.apache.bookkeeper.mledger.impl.PositionImpl;
-import org.apache.commons.lang3.tuple.Pair;
 import org.apache.pulsar.broker.PulsarService;
 import org.apache.pulsar.broker.authentication.AuthenticationDataCommand;
 import org.apache.pulsar.broker.authorization.AuthorizationService;
 import org.apache.pulsar.broker.service.BrokerServiceException;
-import org.apache.pulsar.broker.service.Consumer;
-import org.apache.pulsar.broker.service.Subscription;
-import org.apache.pulsar.common.api.proto.CommandAck;
 import org.apache.pulsar.common.api.proto.CommandSubscribe;
 import org.apache.pulsar.common.naming.TopicName;
-import org.apache.pulsar.common.util.Codec;
 import org.apache.pulsar.common.util.FutureUtil;
 
 /**
@@ -132,7 +122,7 @@ public class MQTTBrokerProtocolMethodProcessor extends AbstractCommonProtocolMet
 
     @Override
     public void doProcessConnect(MqttAdapterMessage adapterMsg, String userRole,
-                                 ClientRestrictions clientRestrictions) {
+                                 String tenantFabric, ClientRestrictions clientRestrictions) {
         final MqttConnectMessage msg = (MqttConnectMessage) adapterMsg.getMqttMessage();
         ServerRestrictions serverRestrictions = ServerRestrictions.builder()
                 .receiveMaximum(configuration.getReceiveMaximum())
@@ -142,6 +132,7 @@ public class MQTTBrokerProtocolMethodProcessor extends AbstractCommonProtocolMet
                 .protocolVersion(msg.variableHeader().version())
                 .clientId(msg.payload().clientIdentifier())
                 .userRole(userRole)
+                .tenantFabric(tenantFabric)
                 .willMessage(createWillMessage(msg))
                 .clientRestrictions(clientRestrictions)
                 .serverRestrictions(serverRestrictions)
@@ -190,7 +181,9 @@ public class MQTTBrokerProtocolMethodProcessor extends AbstractCommonProtocolMet
     @Override
     public void processPublish(MqttAdapterMessage adapter) {
         if (log.isDebugEnabled()) {
-            log.debug("[Publish] [{}] msg: {}", connection.getClientId(), adapter);
+            String tenantFabric = connection.getTenantFabric();
+            log.debug("[Publish] [{}] [{}] msg: {}", connection.getClientId(), tenantFabric, adapter);
+            log.debug("{} ACL: {}", tenantFabric, aclCache.get(tenantFabric));
         }
         MqttPublishMessage msg = (MqttPublishMessage) adapter.getMqttMessage();
         CompletableFuture<Void> result;
@@ -343,7 +336,9 @@ public class MQTTBrokerProtocolMethodProcessor extends AbstractCommonProtocolMet
         final String userRole = connection.getUserRole();
         final int packetId = msg.variableHeader().messageId();
         if (log.isDebugEnabled()) {
-            log.debug("[Subscribe] [{}] msg: {}", clientId, msg);
+            String tenantFabric = connection.getTenantFabric();
+            log.debug("[Subscribe] [{}] [{}] msg: {}", clientId, tenantFabric, msg);
+            log.debug("{} ACL: {}", tenantFabric, aclCache.get(tenantFabric));
         }
         if (!configuration.isMqttAuthorizationEnabled()) {
             if (log.isDebugEnabled()) {
